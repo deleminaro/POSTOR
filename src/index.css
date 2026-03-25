@@ -1,0 +1,154 @@
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@400;500&family=Playfair+Display:ital,wght@0,400..900;1,400..900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: "Inter", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+  --font-serif: "Playfair Display", serif;
+
+  --color-on-tertiary-fixed-variant: #92002a;
+  --color-outline-variant: #464554;
+  --color-tertiary-fixed-dim: #ffb2b7;
+  --color-inverse-primary: #494bd6;
+  --color-tertiary-container: #ff516a;
+  --color-tertiary-fixed: #ffdadb;
+  --color-outline: #908fa0;
+  --color-surface: #131313;
+  --color-on-primary-fixed-variant: #2f2ebe;
+  --color-surface-container-high: #2a2a2a;
+  --color-surface-bright: #3a3939;
+  --color-surface-dim: #131313;
+  --color-surface-variant: #353534;
+  --color-error-container: #93000a;
+  --color-on-secondary: #003731;
+  --color-inverse-surface: #e5e2e1;
+  --color-tertiary: #ffb2b7;
+  --color-secondary: #44e2cd;
+  --color-primary: #c0c1ff;
+  --color-on-secondary-fixed: #00201c;
+  --color-secondary-container: #03c6b2;
+  --color-primary-container: #8083ff;
+  --color-primary-fixed: #e1e0ff;
+  --color-surface-container-highest: #353534;
+  --color-on-secondary-container: #004d44;
+  --color-background: #131313;
+  --color-error: #ffb4ab;
+  --color-on-primary-container: #0d0096;
+  --color-on-surface-variant: #c7c4d7;
+  --color-on-tertiary: #67001b;
+  --color-on-background: #e5e2e1;
+  --color-secondary-fixed: #62fae3;
+  --color-surface-container-low: #1c1b1b;
+  --color-on-error-container: #ffdad6;
+  --color-on-tertiary-fixed: #40000d;
+  --color-inverse-on-surface: #313030;
+  --color-on-primary: #1000a9;
+  --color-on-secondary-fixed-variant: #005047;
+  --color-surface-tint: #c0c1ff;
+  --color-on-primary-fixed: #07006c;
+  --color-surface-container-lowest: #0e0e0e;
+  --color-on-tertiary-container: #5b0017;
+  --color-secondary-fixed-dim: #3cddc7;
+  --color-on-error: #690005;
+  --color-surface-container: #201f1f;
+  --color-on-surface: #e5e2e1;
+  --color-primary-fixed-dim: #c0c1ff;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-on-surface selection:bg-primary selection:text-on-primary;
+    font-feature-settings: "ss01", "ss02", "cv01", "cv02";
+  }
+}
+
+.glass-panel {
+  background: rgba(28, 27, 27, 0.4);
+  backdrop-filter: blur(32px);
+  -webkit-backdrop-filter: blur(32px);
+}
+
+.album-shadow {
+  box-shadow: 0 30px 60px -12px rgba(0, 0, 0, 0.7);
+}
+
+.nav-hidden {
+  transform: translate(-50%, 200%);
+  opacity: 0;
+  pointer-events: none;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.nav-visible {
+  transform: translate(-50%, 0);
+  opacity: 1;
+  pointer-events: auto;
+  transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.trigger-btn {
+  background: rgba(28, 27, 27, 0.6);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+/* Custom scrollbar for a cleaner look */
+::-webkit-scrollbar {
+  width: 4px;
+}
+
+::-webkit-scrollbar-track {
+  background: #000;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #fff;
+}
+
+/* Custom Range Input Styling */
+input[type="range"] {
+  -webkit-appearance: none;
+  background: transparent;
+}
+
+input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  height: 16px;
+  width: 16px;
+  background: #ffffff;
+  cursor: pointer;
+  margin-top: -6px;
+  border: 1px solid #000;
+}
+
+input[type="range"]::-moz-range-thumb {
+  height: 16px;
+  width: 16px;
+  background: #ffffff;
+  cursor: pointer;
+  border: 1px solid #000;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  width: 100%;
+  height: 2px;
+  cursor: pointer;
+  background: rgba(255, 255, 255, 0.2);
+}
+
+.glass {
+  @apply bg-black/80 backdrop-blur-xl border border-white/10;
+}
+
+.bw-button {
+  @apply bg-white text-black hover:bg-black hover:text-white border border-white transition-all duration-300 px-6 py-3 font-bold uppercase tracking-widest text-xs;
+}
+
+.bw-button-outline {
+  @apply bg-transparent text-white hover:bg-white hover:text-black border border-white transition-all duration-300 px-6 py-3 font-bold uppercase tracking-widest text-xs;
+}
+
+.data-row {
+  @apply border-b border-white/10 hover:bg-white hover:text-black transition-all duration-200 cursor-pointer;
+}

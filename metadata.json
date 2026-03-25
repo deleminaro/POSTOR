@@ -1,0 +1,5 @@
+{
+  "name": "Vivid Music Player",
+  "description": "A modern music player with SoundCloud streaming and Genius lyrics integration.",
+  "requestFramePermissions": []
+}
