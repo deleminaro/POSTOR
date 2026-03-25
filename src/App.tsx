@@ -235,13 +235,28 @@ const MiniPlayer = ({
   );
 };
 
+const Logo = ({ className = "w-8 h-8" }: { className?: string }) => (
+  <svg 
+    viewBox="0 0 100 100" 
+    fill="none" 
+    xmlns="http://www.w3.org/2000/svg"
+    className={className}
+  >
+    <path 
+      d="M35 20V75C35 85 25 90 25 90M35 20H65C80 20 80 55 65 55H35" 
+      stroke="currentColor" 
+      strokeWidth="10" 
+      strokeLinecap="round" 
+      strokeLinejoin="round"
+    />
+  </svg>
+);
+
 const Header = () => (
   <header className="fixed top-0 w-full z-50 bg-background/80 backdrop-blur-3xl border-b border-white/5">
     <div className="flex justify-between items-center px-6 h-16 max-w-[1600px] mx-auto">
       <div className="flex items-center gap-4">
-        <div className="w-8 h-8 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
-          <div className="w-4 h-4 bg-on-primary rounded-sm rotate-45"></div>
-        </div>
+        <Logo className="w-8 h-8 text-primary" />
         <h1 className="font-black tracking-tighter uppercase text-xl text-on-surface">POSTOR.</h1>
       </div>
       <div className="flex items-center gap-4">
@@ -1369,6 +1384,7 @@ const SettingsScreen: React.FC = () => (
     className="max-w-2xl mx-auto space-y-12 md:space-y-16 pb-32"
   >
     <div className="space-y-4 border-b border-white/5 pb-6 md:pb-8">
+      <Logo className="w-12 h-12 text-primary mb-4" />
       <h2 className="text-4xl sm:text-6xl font-black tracking-tighter text-on-surface uppercase">Settings</h2>
       <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">System Configuration</p>
     </div>
@@ -2013,7 +2029,7 @@ export default function App() {
       </div>
 
       {/* Global Header */}
-      <Header />
+      {screen !== 'player' && <Header />}
 
       <main className="relative z-10 pt-24 md:pt-32 px-4 md:px-6 max-w-[1600px] mx-auto min-h-screen">
         <AnimatePresence mode="wait">
