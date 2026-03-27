@@ -6,3 +6,12 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# IDEs
+.vscode/
+.idea/
+
+# Platform-specific
+metadata.json
+firebase-applet-config.json
+firebase-blueprint.json

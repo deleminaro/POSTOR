@@ -1,6 +1,6 @@
-import { Home, Search, PlayCircle, Library, Settings, SkipBack, SkipForward, Play, Pause, Shuffle, Repeat, Heart, Volume2, MoreVertical, ChevronDown } from 'lucide-react';
+import { Home, Search, PlayCircle, Library, SkipBack, SkipForward, Play, Pause, Shuffle, Repeat, Heart, Volume2, MoreVertical, ChevronDown } from 'lucide-react';
 
-export type Screen = 'home' | 'search' | 'player' | 'library' | 'settings' | 'playlist' | 'queue';
+export type Screen = 'home' | 'search' | 'player' | 'library' | 'playlist' | 'queue';
 
 export interface Track {
   id: string;
@@ -9,7 +9,7 @@ export interface Track {
   coverUrl: string;
   duration: string;
   category?: string;
-  source?: 'soundcloud' | 'youtube' | 'spotify';
+  source?: 'soundcloud' | 'youtube';
 }
 
 export interface Playlist {

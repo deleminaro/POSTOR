@@ -9,7 +9,6 @@ import {
   Search as SearchIcon, 
   PlayCircle, 
   Library as LibraryIcon, 
-  Settings, 
   SkipBack, 
   SkipForward, 
   Play, 
@@ -37,7 +36,8 @@ import {
   Trash2,
   GripVertical,
   ListPlus,
-  X
+  X,
+  Gauge
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactPlayer from 'react-player';
@@ -45,7 +45,6 @@ import Hls from 'hls.js';
 import { Screen, Track, Playlist, RECENTLY_PLAYED, PLAYLISTS, ARTISTS } from './types';
 import * as soundcloud from './services/soundcloud';
 import * as youtube from './services/youtube';
-import * as spotify from './services/spotify';
 import { getLyrics } from './services/lyrics';
 import { Equalizer } from './components/Equalizer';
 
@@ -67,7 +66,6 @@ const BottomNav = ({
     { id: 'search', icon: SearchIcon, label: 'Search' },
     { id: 'player', icon: PlayCircle, label: 'Player' },
     { id: 'library', icon: LibraryIcon, label: 'Library' },
-    { id: 'settings' as any, icon: Settings, label: 'Settings' },
   ];
 
   return (
@@ -106,6 +104,7 @@ const BottomNav = ({
             className={`
               relative flex flex-col items-center justify-center p-2 transition-all duration-300
               ${activeScreen === item.id ? 'text-primary scale-110' : 'text-on-surface/40 hover:text-on-surface'}
+              ${item.id === 'player' ? 'hidden md:flex' : 'flex'}
             `}
           >
             <item.icon size={24} strokeWidth={activeScreen === item.id ? 2.5 : 2} />
@@ -153,7 +152,7 @@ const PlayerWrapper = React.forwardRef((props: any, ref: any) => {
   }, {});
 
   return (
-    <div ref={ref} className={className} style={{ ...style, width, height }} {...cleanRest}>
+    <div ref={ref} className={`rounded-[40px] overflow-hidden ${className || ''}`} style={{ ...style, width, height }} {...cleanRest}>
       {children}
     </div>
   );
@@ -189,7 +188,7 @@ const MiniPlayer = ({
       onClick={() => setScreen('player')}
     >
       <div className="flex items-center gap-3 flex-1 min-w-0">
-        <div className="w-10 h-10 rounded-xl overflow-hidden flex-shrink-0 shadow-lg">
+        <div className="w-10 h-10 rounded-2xl overflow-hidden flex-shrink-0 shadow-lg">
           <img 
             src={track.coverUrl} 
             alt={track.title} 
@@ -367,7 +366,7 @@ const SearchScreen: React.FC<{
   onLike: (t: Track) => void;
   onAddToPlaylist: (t: Track) => void;
   onAddToQueue: (t: Track) => void;
-  isSpotifyAuthenticated: boolean;
+  showToast: (msg: string) => void;
 }> = ({ 
   searchQuery, 
   setSearchQuery, 
@@ -383,38 +382,19 @@ const SearchScreen: React.FC<{
   onLike,
   onAddToPlaylist,
   onAddToQueue,
-  isSpotifyAuthenticated
+  showToast
 }) => {
-  const [isSourceOpen, setIsSourceOpen] = useState(false);
-  const sources = ['All', 'SoundCloud', 'YouTube', 'Spotify'];
+  const sources = ['All', 'SoundCloud', 'YouTube'];
 
-  const handleConnectSpotify = async () => {
-    const authWindow = window.open('about:blank', 'spotify_auth', 'width=600,height=700');
-    if (!authWindow) {
-      alert('Please allow popups for this site to connect your account.');
-      return;
-    }
-
-    try {
-      const url = await spotify.getAuthUrl();
-      if (url) {
-        authWindow.location.href = url;
-      } else {
-        authWindow.close();
-        alert('Failed to get Spotify authorization URL. Please ensure SPOTIFY_CLIENT_ID is set in your environment variables.');
-      }
-    } catch (error) {
-      authWindow.close();
-      console.error('Spotify Auth URL Error:', error);
-      alert('An error occurred while connecting to Spotify. Check the console for details.');
-    }
+  const handleConnectSoundCloud = async () => {
+    showToast('SoundCloud connection is not available.');
   };
 
   const copyRedirectUri = () => {
     const baseUrl = window.location.origin;
-    const uri = `${baseUrl}/api/auth/spotify/callback`;
+    const uri = `${baseUrl}/api/auth/soundcloud/callback`;
     navigator.clipboard.writeText(uri);
-    alert('Redirect URI copied to clipboard!');
+    showToast('Redirect URI copied to clipboard!');
   };
 
   return (
@@ -425,62 +405,48 @@ const SearchScreen: React.FC<{
       className="space-y-12 pb-32"
     >
       <div className="space-y-8">
-        <div className="flex flex-col md:flex-row gap-4">
-          <form onSubmit={onSearch} className="flex-1 relative group">
+        <div className="space-y-6">
+          <form onSubmit={onSearch} className="relative group flex items-center">
             <SearchIcon className="absolute left-6 top-1/2 -translate-y-1/2 text-on-surface/20 group-focus-within:text-primary transition-colors" size={20} />
             <input 
               type="text" 
               placeholder="Search for tracks, artists..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="w-full h-16 bg-white/5 border border-white/10 rounded-3xl pl-16 pr-6 text-on-surface font-bold placeholder:text-on-surface/20 focus:outline-none focus:border-primary/50 focus:bg-white/10 transition-all"
+              className="w-full h-20 bg-white/5 border border-white/10 rounded-[40px] pl-16 pr-16 text-on-surface font-bold text-lg placeholder:text-on-surface/20 focus:outline-none focus:border-primary/50 focus:bg-white/10 transition-all shadow-2xl"
             />
+            <button type="submit" className="absolute right-6 p-3 bg-primary text-on-primary rounded-2xl hover:scale-105 transition-transform shadow-lg">
+              <SearchIcon size={20} />
+            </button>
           </form>
           
-          <div className="relative">
-            <button 
-              onClick={() => setIsSourceOpen(!isSourceOpen)}
-              className="h-16 px-8 bg-white/5 border border-white/10 rounded-3xl flex items-center gap-4 text-on-surface font-black uppercase tracking-widest text-xs hover:bg-white/10 transition-all"
-            >
-              {selectedSource}
-              <ChevronDown size={16} className={`transition-transform duration-300 ${isSourceOpen ? 'rotate-180' : ''}`} />
-            </button>
-            <AnimatePresence>
-              {isSourceOpen && (
-                <motion.div 
-                  initial={{ opacity: 0, y: 10 }}
-                  animate={{ opacity: 1, y: 0 }}
-                  exit={{ opacity: 0, y: 10 }}
-                  className="absolute top-full right-0 mt-2 w-48 bg-background/80 backdrop-blur-3xl border border-white/10 rounded-2xl overflow-hidden z-50 shadow-2xl"
-                >
-                  {sources.map((source) => (
-                    <button
-                      key={source}
-                      onClick={() => {
-                        setSelectedSource(source);
-                        setIsSourceOpen(false);
-                      }}
-                      className={`w-full px-6 py-4 text-left text-[10px] font-black uppercase tracking-widest transition-colors ${selectedSource === source ? 'bg-primary text-on-primary' : 'text-on-surface/60 hover:bg-white/5 hover:text-on-surface'}`}
-                    >
-                      {source}
-                    </button>
-                  ))}
-                </motion.div>
-              )}
-            </AnimatePresence>
+          <div className="flex flex-wrap items-center gap-3">
+            <p className="text-[10px] font-black uppercase tracking-[0.3em] text-on-surface/40 mr-2">Source:</p>
+            {sources.map((source) => (
+              <button
+                key={source}
+                onClick={() => setSelectedSource(source)}
+                className={`px-6 py-3 rounded-2xl text-[10px] font-black uppercase tracking-widest transition-all border ${selectedSource === source ? 'bg-primary text-on-primary border-primary shadow-lg scale-105' : 'bg-white/5 text-on-surface/40 border-white/10 hover:bg-white/10 hover:text-on-surface'}`}
+              >
+                {source}
+              </button>
+            ))}
           </div>
         </div>
 
         {/* Recent Searches */}
         {recentSearches.length > 0 && (
-          <div className="space-y-4">
+          <div className="space-y-4 animate-in fade-in slide-in-from-top-4 duration-500">
             <div className="flex justify-between items-center">
-              <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-on-surface/40">Recent Searches</h4>
+              <div className="flex items-center gap-2">
+                <History size={12} className="text-primary" />
+                <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-on-surface/40">Recent Searches</h4>
+              </div>
               <button 
                 onClick={onClearRecent}
-                className="text-[10px] font-black uppercase tracking-widest text-primary hover:underline"
+                className="text-[10px] font-black uppercase tracking-widest text-primary hover:underline transition-all"
               >
-                Clear
+                Clear History
               </button>
             </div>
             <div className="flex flex-wrap gap-2">
@@ -488,8 +454,9 @@ const SearchScreen: React.FC<{
                 <button
                   key={idx}
                   onClick={() => onSearch(undefined, query)}
-                  className="px-4 py-2 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-on-surface/60 hover:bg-primary hover:text-on-primary hover:border-primary transition-all"
+                  className="px-5 py-2.5 bg-white/5 border border-white/10 rounded-xl text-[10px] font-bold text-on-surface/60 hover:bg-white/10 hover:text-on-surface hover:border-white/20 transition-all flex items-center gap-2 group"
                 >
+                  <ArrowUpLeft size={10} className="text-primary/40 group-hover:text-primary transition-colors" />
                   {query}
                 </button>
               ))}
@@ -582,15 +549,19 @@ const PlayerScreen: React.FC<{
   onOpenEqualizer: () => void;
   onOpenQueue: () => void;
   onAddToQueue: () => void;
+  onBack: () => void;
   queue: Track[];
   currentContext: Track[];
   trendingTracks: Track[];
-}> = ({ track, isPlaying, setIsPlaying, isShuffle, setIsShuffle, isRepeat, setIsRepeat, isLiked, onLike, onAddToPlaylist, onAddToQueue, onNext, onPrev, currentTime, duration, isBuffering, onSeek, setDuration, volume, setVolume, onOpenEqualizer, onOpenQueue, queue, currentContext, trendingTracks }) => {
+  playbackRate: number;
+  setPlaybackRate: (r: number) => void;
+}> = ({ track, isPlaying, setIsPlaying, isShuffle, setIsShuffle, isRepeat, setIsRepeat, isLiked, onLike, onAddToPlaylist, onAddToQueue, onNext, onPrev, currentTime, duration, isBuffering, onSeek, setDuration, volume, setVolume, onOpenEqualizer, onOpenQueue, onBack, queue, currentContext, trendingTracks, playbackRate, setPlaybackRate }) => {
   const playerRef = useRef<any>(null);
   const [isSeeking, setIsSeeking] = useState(false);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [isSpeedMenuOpen, setIsSpeedMenuOpen] = useState(false);
   const [lyrics, setLyrics] = useState<string | null>(null);
   const [isLyricsLoading, setIsLyricsLoading] = useState(false);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
@@ -655,6 +626,14 @@ const PlayerScreen: React.FC<{
       exit={{ opacity: 0, y: -20 }}
       className="fixed inset-0 z-40 flex flex-col md:relative md:inset-auto md:z-0 md:h-full"
     >
+      {/* Back Button for Mobile */}
+      <button 
+        onClick={onBack}
+        className="absolute top-6 left-6 z-50 p-3 bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl text-on-surface/60 hover:text-primary transition-all md:hidden"
+      >
+        <ChevronDown size={24} />
+      </button>
+
       <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 space-y-8 md:space-y-12">
         
         {/* Album Art Section */}
@@ -666,7 +645,7 @@ const PlayerScreen: React.FC<{
             className="w-full h-full rounded-[40px] overflow-hidden album-shadow bg-black"
           >
             {track.source === 'youtube' ? (
-              <div className="w-full h-full relative">
+              <div className="w-full h-full relative rounded-[40px] overflow-hidden">
                 {!isPlayerReady && (
                   <img 
                     className="absolute inset-0 w-full h-full object-cover z-10" 
@@ -680,7 +659,9 @@ const PlayerScreen: React.FC<{
                   url={`https://www.youtube.com/watch?v=${track.id}`}
                   width="100%"
                   height="100%"
+                  style={{ borderRadius: '40px', overflow: 'hidden' }}
                   playing={isPlaying && isPlayerReady}
+                  playbackRate={playbackRate}
                   loop={isRepeat}
                   volume={volume}
                   playsinline
@@ -736,7 +717,7 @@ const PlayerScreen: React.FC<{
         <div className="w-full max-w-[500px] glass-panel p-8 md:p-10 space-y-8">
           {nextTrack && (
             <div className="flex items-center gap-3 px-4 py-2 bg-primary/10 rounded-2xl border border-primary/20 animate-in fade-in slide-in-from-top-4 duration-500">
-              <div className="w-8 h-8 rounded-lg overflow-hidden shrink-0">
+              <div className="w-8 h-8 rounded-xl overflow-hidden shrink-0">
                 <img src={nextTrack.coverUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               </div>
               <div className="flex-1 min-w-0">
@@ -838,6 +819,38 @@ const PlayerScreen: React.FC<{
                 <ListPlus size={14} />
                 Queue
               </button>
+              <div className="relative">
+                <button 
+                  onClick={() => setIsSpeedMenuOpen(!isSpeedMenuOpen)}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all ${isSpeedMenuOpen ? 'bg-primary text-on-primary' : 'bg-white/5 text-on-surface/40 hover:text-on-surface'}`}
+                >
+                  <Gauge size={14} />
+                  {playbackRate}x
+                </button>
+                <AnimatePresence>
+                  {isSpeedMenuOpen && (
+                    <motion.div 
+                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                      animate={{ opacity: 1, y: 0, scale: 1 }}
+                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                      className="absolute bottom-full left-0 mb-2 flex flex-col bg-surface border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50 min-w-[100px]"
+                    >
+                      {[0.5, 1, 1.5, 2].map(speed => (
+                        <button
+                          key={speed}
+                          onClick={() => {
+                            setPlaybackRate(speed);
+                            setIsSpeedMenuOpen(false);
+                          }}
+                          className={`px-6 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-primary hover:text-on-primary transition-all text-left whitespace-nowrap ${playbackRate === speed ? 'bg-primary/20 text-primary' : 'text-on-surface/60'}`}
+                        >
+                          {speed}x
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </div>
             </div>
             
             <div className="flex items-center gap-3 group">
@@ -943,6 +956,7 @@ const PlaylistView = ({
   onAddToQueue: (t: Track) => void
 }) => {
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -999,11 +1013,7 @@ const PlaylistView = ({
               <Play size={16} fill="currentColor" /> Play
             </button>
             <button 
-              onClick={() => {
-                if (confirm('Are you sure you want to delete this playlist?')) {
-                  onDeletePlaylist(playlist.id);
-                }
-              }}
+              onClick={() => setShowDeleteConfirm(true)}
               className="px-8 py-4 bg-white/5 text-on-surface/40 hover:text-red-500 border border-white/10 rounded-full font-black uppercase tracking-widest text-xs transition-all flex items-center gap-2"
             >
               <Trash2 size={16} /> Delete
@@ -1026,7 +1036,7 @@ const PlaylistView = ({
                 key={`${track.id}-${index}`}
                 className="group flex items-center gap-4 p-4 bg-white/5 border border-white/5 rounded-3xl hover:bg-white/10 hover:border-white/10 transition-all"
               >
-                <div className="w-12 h-12 rounded-xl overflow-hidden grayscale group-hover:grayscale-0 transition-all duration-500 shrink-0">
+                <div className="w-12 h-12 rounded-2xl overflow-hidden grayscale group-hover:grayscale-0 transition-all duration-500 shrink-0">
                   <img src={track.coverUrl} alt={track.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 </div>
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onPlay(track)}>
@@ -1074,6 +1084,32 @@ const PlaylistView = ({
           </div>
         )}
       </div>
+
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+          <div className="bg-surface p-8 rounded-3xl border border-white/10 max-w-md w-full mx-4 space-y-6">
+            <h3 className="text-2xl font-black uppercase tracking-tighter text-on-surface">Delete Playlist?</h3>
+            <p className="text-on-surface/60">Are you sure you want to delete this playlist? This action cannot be undone.</p>
+            <div className="flex gap-4 justify-end">
+              <button 
+                onClick={() => setShowDeleteConfirm(false)}
+                className="px-6 py-3 bg-white/5 text-on-surface hover:bg-white/10 rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
+              >
+                Cancel
+              </button>
+              <button 
+                onClick={() => {
+                  onDeletePlaylist(playlist.id);
+                  setShowDeleteConfirm(false);
+                }}
+                className="px-6 py-3 bg-red-500 text-white hover:bg-red-600 rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
+              >
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </motion.div>
   );
 };
@@ -1150,7 +1186,7 @@ const QueueView = ({
         <div className="space-y-4">
           <h4 className="text-[10px] font-black uppercase tracking-[0.3em] text-on-surface/40">Now Playing</h4>
           <div className="flex items-center gap-4 p-4 bg-primary/10 border border-primary/20 rounded-3xl">
-            <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0">
+            <div className="w-12 h-12 rounded-2xl overflow-hidden shrink-0">
               <img src={currentTrack.coverUrl} alt="" className="w-full h-full object-cover" referrerPolicy="no-referrer" />
             </div>
             <div className="flex-1 min-w-0">
@@ -1175,7 +1211,7 @@ const QueueView = ({
                 key={`${track.id}-${index}`}
                 className="group flex items-center gap-4 p-4 bg-white/5 border border-white/5 rounded-3xl hover:bg-white/10 hover:border-white/10 transition-all"
               >
-                <div className="w-12 h-12 rounded-xl overflow-hidden grayscale group-hover:grayscale-0 transition-all duration-500 shrink-0">
+                <div className="w-12 h-12 rounded-2xl overflow-hidden grayscale group-hover:grayscale-0 transition-all duration-500 shrink-0">
                   <img src={track.coverUrl} alt={track.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 </div>
                 <div className="flex-1 min-w-0 cursor-pointer" onClick={() => onPlay(track, index)}>
@@ -1226,7 +1262,7 @@ const QueueView = ({
                 key={`${track.id}-context-${index}`}
                 className="group flex items-center gap-4 p-4 bg-white/5 border border-white/5 rounded-3xl hover:bg-white/10 hover:border-white/10 transition-all opacity-60 hover:opacity-100"
               >
-                <div className="w-12 h-12 rounded-xl overflow-hidden shrink-0">
+                <div className="w-12 h-12 rounded-2xl overflow-hidden shrink-0">
                   <img src={track.coverUrl} alt={track.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                 </div>
                 <div className="flex-1 min-w-0">
@@ -1286,7 +1322,7 @@ const AddToPlaylistModal = ({
               onClick={() => onAdd(playlist.id, track)}
               className="w-full flex items-center gap-4 p-4 bg-white/5 border border-white/5 rounded-3xl hover:bg-white/10 hover:border-white/10 transition-all group text-left"
             >
-              <div className="w-12 h-12 rounded-xl overflow-hidden grayscale group-hover:grayscale-0 shrink-0">
+              <div className="w-12 h-12 rounded-2xl overflow-hidden grayscale group-hover:grayscale-0 shrink-0">
                 <img src={playlist.coverUrl} alt={playlist.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               </div>
               <div className="flex-1 min-w-0">
@@ -1333,7 +1369,19 @@ const LibraryScreen: React.FC<{
   onSelectPlaylist: (p: Playlist) => void;
   onCreatePlaylist: (title: string) => void;
   onAddToQueue: (t: Track) => void;
-}> = ({ onPlay, onShuffleAll, likedTracks, playlists, onSelectPlaylist, onCreatePlaylist, onAddToQueue }) => (
+}> = ({ onPlay, onShuffleAll, likedTracks, playlists, onSelectPlaylist, onCreatePlaylist, onAddToQueue }) => {
+  const [showCreateModal, setShowCreateModal] = useState(false);
+  const [newPlaylistTitle, setNewPlaylistTitle] = useState('');
+
+  const handleCreatePlaylist = () => {
+    if (newPlaylistTitle.trim()) {
+      onCreatePlaylist(newPlaylistTitle.trim());
+      setNewPlaylistTitle('');
+      setShowCreateModal(false);
+    }
+  };
+
+  return (
   <motion.div 
     initial={{ opacity: 0 }}
     animate={{ opacity: 1 }}
@@ -1422,10 +1470,7 @@ const LibraryScreen: React.FC<{
       <div className="flex justify-between items-end border-b border-white/5 pb-6">
         <h3 className="text-3xl font-black uppercase tracking-tighter text-on-surface">Playlists</h3>
         <button 
-          onClick={() => {
-            const title = prompt('Enter playlist title:');
-            if (title) onCreatePlaylist(title);
-          }}
+          onClick={() => setShowCreateModal(true)}
           className="text-[10px] font-black uppercase tracking-widest text-primary hover:text-on-surface transition-colors"
         >
           Create New +
@@ -1438,7 +1483,7 @@ const LibraryScreen: React.FC<{
             onClick={() => onSelectPlaylist(playlist)}
             className="group cursor-pointer space-y-6"
           >
-            <div className="aspect-square rounded-[40px] overflow-hidden relative bg-black album-shadow">
+            <div className="aspect-square rounded-3xl overflow-hidden relative bg-black album-shadow">
               <img 
                 className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-700 opacity-60 group-hover:opacity-100" 
                 src={playlist.coverUrl} 
@@ -1459,70 +1504,61 @@ const LibraryScreen: React.FC<{
         ))}
       </div>
     </section>
+
+    {showCreateModal && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm">
+        <div className="bg-surface p-8 rounded-3xl border border-white/10 max-w-md w-full mx-4 space-y-6">
+          <h3 className="text-2xl font-black uppercase tracking-tighter text-on-surface">Create Playlist</h3>
+          <input
+            type="text"
+            value={newPlaylistTitle}
+            onChange={(e) => setNewPlaylistTitle(e.target.value)}
+            placeholder="Playlist Title"
+            className="w-full bg-white/5 border border-white/10 rounded-2xl p-4 font-bold text-xs uppercase tracking-widest text-on-surface focus:border-primary outline-none transition-all"
+            autoFocus
+            onKeyDown={(e) => {
+              if (e.key === 'Enter') handleCreatePlaylist();
+              if (e.key === 'Escape') setShowCreateModal(false);
+            }}
+          />
+          <div className="flex gap-4 justify-end">
+            <button 
+              onClick={() => setShowCreateModal(false)}
+              className="px-6 py-3 bg-white/5 text-on-surface hover:bg-white/10 rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
+            >
+              Cancel
+            </button>
+            <button 
+              onClick={handleCreatePlaylist}
+              disabled={!newPlaylistTitle.trim()}
+              className="px-6 py-3 bg-primary text-on-primary hover:bg-primary/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl font-bold text-xs uppercase tracking-widest transition-all"
+            >
+              Create
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
   </motion.div>
-);
+  );
+};
 
 
 // --- Main App ---
 
-const SettingsScreen: React.FC = () => (
-  <motion.div 
-    initial={{ opacity: 0 }}
-    animate={{ opacity: 1 }}
-    exit={{ opacity: 0 }}
-    className="max-w-2xl mx-auto space-y-12 md:space-y-16 pb-32"
-  >
-    <div className="space-y-4 border-b border-white/5 pb-6 md:pb-8">
-      <Logo className="w-12 h-12 text-primary mb-4" />
-      <h2 className="text-4xl sm:text-6xl font-black tracking-tighter text-on-surface uppercase">Settings</h2>
-      <p className="text-[10px] font-black uppercase tracking-[0.3em] text-primary">System Configuration</p>
-    </div>
-
-    <div className="space-y-8 md:space-y-12">
-      <div className="glass-panel p-6 md:p-10 space-y-8 md:space-y-10 rounded-[40px] shadow-2xl">
-        <div className="flex items-center justify-between">
-          <div className="space-y-2">
-            <h4 className="text-xl font-black uppercase tracking-tighter text-on-surface">High Fidelity Audio</h4>
-            <p className="text-[10px] font-bold text-on-surface/40 uppercase tracking-widest">320kbps Stream Quality</p>
-          </div>
-          <div className="w-14 h-7 bg-primary rounded-full p-1 flex items-center justify-end">
-            <div className="w-5 h-5 bg-on-primary rounded-full"></div>
-          </div>
-        </div>
-        
-        <div className="h-px bg-white/5"></div>
-        
-        <div className="flex items-center justify-between">
-          <div className="space-y-2">
-            <h4 className="text-xl font-black uppercase tracking-tighter text-on-surface">Gapless Playback</h4>
-            <p className="text-[10px] font-bold text-on-surface/40 uppercase tracking-widest">Seamless Transitions</p>
-          </div>
-          <div className="w-14 h-7 bg-white/10 rounded-full p-1 flex items-center justify-start">
-            <div className="w-5 h-5 bg-white/40 rounded-full"></div>
-          </div>
-        </div>
-
-        <div className="h-px bg-white/5"></div>
-        
-        <div className="flex items-center justify-between">
-          <div className="space-y-2">
-            <h4 className="text-xl font-black uppercase tracking-tighter text-on-surface">SoundCloud Node</h4>
-            <p className="text-[10px] font-bold text-on-surface/40 uppercase tracking-widest truncate max-w-[200px]">ID: {process.env.SOUNDCLOUD_CLIENT_ID}</p>
-          </div>
-          <button className="text-[10px] font-black uppercase tracking-widest border border-white/10 px-4 py-2 rounded-full hover:bg-white/10 transition-all text-on-surface">Rotate</button>
-        </div>
-      </div>
-
-      <button className="w-full py-6 bg-white/5 border border-white/10 rounded-[32px] font-black uppercase tracking-[0.2em] text-on-surface hover:bg-white/10 transition-all">
-        Terminate Session
-      </button>
-    </div>
-  </motion.div>
-);
 
 export default function App() {
   const [screen, setScreen] = useState<Screen>('home');
+  const [prevScreen, setPrevScreen] = useState<Screen>('home');
   const [currentTrack, setCurrentTrack] = useState<Track>(RECENTLY_PLAYED[0]);
+
+  const navigateTo = (newScreen: Screen) => {
+    if (screen !== 'player') {
+      setPrevScreen(screen);
+    }
+    setScreen(newScreen);
+  };
+
   const [recentlyPlayed, setRecentlyPlayed] = useState<Track[]>(() => {
     const saved = localStorage.getItem('recentlyPlayed');
     return saved ? JSON.parse(saved) : [];
@@ -1663,21 +1699,37 @@ export default function App() {
 
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedSource, setSelectedSource] = useState('All');
-  const [recentSearches, setRecentSearches] = useState<string[]>([]);
+  const [recentSearches, setRecentSearches] = useState<string[]>(() => {
+    const saved = localStorage.getItem('recentSearches');
+    return saved ? JSON.parse(saved) : [];
+  });
   const [searchResults, setSearchResults] = useState<Track[]>([]);
+
+  useEffect(() => {
+    localStorage.setItem('recentSearches', JSON.stringify(recentSearches));
+  }, [recentSearches]);
+
   const [trendingTracks, setTrendingTracks] = useState<Track[]>(RECENTLY_PLAYED);
   const [isLoading, setIsLoading] = useState(false);
-  const [isSpotifyAuthenticated, setIsSpotifyAuthenticated] = useState(false);
   const [audio] = useState(new Audio());
+  const [playbackRate, setPlaybackRate] = useState(1);
+  const playbackRateRef = useRef(1);
   const playPromiseRef = useRef<Promise<void> | null>(null);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
   const [isBuffering, setIsBuffering] = useState(false);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const showToast = (message: string) => {
+    setToastMessage(message);
+    setTimeout(() => setToastMessage(null), 3000);
+  };
   
   // Helper for safe audio playback
   const safePlay = async () => {
     if (currentTrack.source !== 'youtube' && audio.src && audio.src !== window.location.href) {
       try {
+        audio.playbackRate = playbackRateRef.current;
         playPromiseRef.current = audio.play();
         await playPromiseRef.current;
       } catch (e: any) {
@@ -1715,24 +1767,33 @@ export default function App() {
     audio.playsInline = true;
 
     const loadTrending = async () => {
-      const tracks = await soundcloud.getTrendingTracks();
-      if (tracks.length > 0) {
-        setTrendingTracks(tracks);
-        setCurrentTrack(tracks[0]);
+      try {
+        const [scTracks, ytTracks] = await Promise.allSettled([
+          soundcloud.getTrendingTracks(),
+          youtube.getTrendingTracks()
+        ]);
+        
+        let combinedTracks: Track[] = [];
+        if (scTracks.status === 'fulfilled') combinedTracks = [...combinedTracks, ...scTracks.value];
+        if (ytTracks.status === 'fulfilled') combinedTracks = [...combinedTracks, ...ytTracks.value];
+        
+        if (combinedTracks.length > 0) {
+          // Shuffle the combined trending tracks for variety
+          const shuffled = combinedTracks.sort(() => 0.5 - Math.random());
+          setTrendingTracks(shuffled);
+          setCurrentTrack(shuffled[0]);
+        }
+      } catch (error) {
+        console.error('Error loading trending tracks:', error);
       }
     };
     loadTrending();
-
-    const checkSpotifyAuth = async () => {
-      const authenticated = await spotify.checkAuthStatus();
-      setIsSpotifyAuthenticated(authenticated);
-    };
-    checkSpotifyAuth();
 
     // Audio event listeners
     const onTimeUpdate = () => setCurrentTime(audio.currentTime);
     const onLoadedMetadata = () => {
       setDuration(audio.duration);
+      audio.playbackRate = playbackRateRef.current;
       setIsBuffering(false);
     };
     const onEnded = () => handleNext();
@@ -1771,6 +1832,11 @@ export default function App() {
   }, [volume]);
 
   useEffect(() => {
+    playbackRateRef.current = playbackRate;
+    audio.playbackRate = playbackRate;
+  }, [playbackRate]);
+
+  useEffect(() => {
     if (isPlaying) {
       // Initialize AudioContext on first user interaction
       if (!audioCtxRef.current) {
@@ -1807,9 +1873,13 @@ export default function App() {
         audioCtxRef.current.resume();
       }
 
-      safePlay();
+      if (currentTrack?.source !== 'youtube') {
+        safePlay();
+      }
     } else {
-      safePause();
+      if (currentTrack?.source !== 'youtube') {
+        safePause();
+      }
     }
   }, [isPlaying, currentTrack]);
 
@@ -1827,17 +1897,18 @@ export default function App() {
     if (context) {
       setCurrentContext(context);
     }
+    await safePause();
+    audio.removeAttribute('src');
+    audio.load();
+    setCurrentTime(0);
     setCurrentTrack(track);
     setIsPlaying(true);
     setIsBuffering(true);
-    setScreen('player');
+    navigateTo('player');
 
     // Reset audio element if it's a YouTube track
     if (track.source === 'youtube') {
       setIsBuffering(false);
-      await safePause();
-      audio.removeAttribute('src');
-      audio.load();
       // Convert "4:20" to seconds for the duration state
       const [mins, secs] = track.duration.split(':').map(Number);
       if (!isNaN(mins) && !isNaN(secs)) {
@@ -1855,37 +1926,6 @@ export default function App() {
       return;
     }
 
-    if (track.source === 'spotify') {
-      console.log('Spotify track selected, searching for YouTube equivalent...');
-      const ytTracks = await youtube.searchTracks(`${track.title} ${track.artist}`);
-      if (ytTracks.length > 0) {
-        const ytTrack = ytTracks[0];
-        // Keep Spotify metadata but play YouTube audio
-        setCurrentTrack({
-          ...track,
-          id: ytTrack.id, // Use YouTube ID for playback
-          source: 'youtube'
-        });
-        await safePause();
-        audio.removeAttribute('src');
-        audio.load();
-        const [mins, secs] = ytTrack.duration.split(':').map(Number);
-        if (!isNaN(mins) && !isNaN(secs)) {
-          setDuration(mins * 60 + secs);
-        } else {
-          setDuration(0);
-        }
-        setIsBuffering(false);
-        
-        // Update recently played
-        setRecentlyPlayed(prev => {
-          const filtered = prev.filter(t => t.id !== track.id);
-          return [track, ...filtered].slice(0, 20);
-        });
-        return;
-      }
-    }
-
     // Fetch real stream URL if it's a SoundCloud track
     const streamUrl = await soundcloud.getStreamUrl(track.id);
     if (streamUrl) {
@@ -1900,7 +1940,6 @@ export default function App() {
           if (hlsRef.current) {
             hlsRef.current.destroy();
           }
-          await safePause();
           const hls = new Hls();
           hls.loadSource(streamUrl);
           hls.attachMedia(audio);
@@ -1918,7 +1957,6 @@ export default function App() {
           hlsRef.current.destroy();
           hlsRef.current = null;
         }
-        await safePause();
         audio.src = streamUrl;
         safePlay();
       }
@@ -1927,11 +1965,12 @@ export default function App() {
       const ytTracks = await youtube.searchTracks(`${track.title} ${track.artist}`);
       if (ytTracks.length > 0) {
         const ytTrack = ytTracks[0];
-        setCurrentTrack(ytTrack);
+        setCurrentTrack({
+          ...track,
+          id: ytTrack.id,
+          source: 'youtube'
+        });
         setIsBuffering(false);
-        await safePause();
-        audio.removeAttribute('src');
-        audio.load();
         // Convert "4:20" to seconds for the duration state
         const [mins, secs] = ytTrack.duration.split(':').map(Number);
         if (!isNaN(mins) && !isNaN(secs)) {
@@ -1939,6 +1978,12 @@ export default function App() {
         } else {
           setDuration(0);
         }
+        
+        // Update recently played
+        setRecentlyPlayed(prev => {
+          const filtered = prev.filter(t => t.id !== track.id);
+          return [track, ...filtered].slice(0, 20);
+        });
       } else {
         setIsBuffering(false);
         console.warn('YouTube fallback failed for track:', track.id);
@@ -2058,44 +2103,26 @@ export default function App() {
   const handleSearch = async (e?: React.FormEvent, queryOverride?: string) => {
     if (e) e.preventDefault();
     const query = queryOverride || searchQuery;
+    if (queryOverride) setSearchQuery(queryOverride);
+    
     if (query.trim()) {
       setIsLoading(true);
-      setRecentSearches(prev => [query, ...prev.filter(s => s !== query)].slice(0, 5));
+      setRecentSearches(prev => [query, ...prev.filter(s => s !== query)].slice(0, 10));
       
       let results: Track[] = [];
       try {
         if (selectedSource === 'All') {
-          const [scResults, ytResults, spResults] = await Promise.allSettled([
+          const [scResults, ytResults] = await Promise.allSettled([
             soundcloud.searchTracks(query),
-            youtube.searchTracks(query),
-            spotify.searchTracks(query)
+            youtube.searchTracks(query)
           ]);
           
           if (scResults.status === 'fulfilled') results = [...results, ...scResults.value];
           if (ytResults.status === 'fulfilled') results = [...results, ...ytResults.value];
-          if (spResults.status === 'fulfilled') {
-            results = [...results, ...spResults.value];
-            setIsSpotifyAuthenticated(true);
-          } else if (spResults.reason.message === 'Spotify not authenticated') {
-            setIsSpotifyAuthenticated(false);
-          }
         } else if (selectedSource === 'SoundCloud') {
           results = await soundcloud.searchTracks(query);
         } else if (selectedSource === 'YouTube') {
           results = await youtube.searchTracks(query);
-        } else if (selectedSource === 'Spotify') {
-          try {
-            results = await spotify.searchTracks(query);
-            setIsSpotifyAuthenticated(true);
-          } catch (error: any) {
-            if (error.message === 'Spotify not authenticated') {
-              setIsSpotifyAuthenticated(false);
-              const url = await spotify.getAuthUrl();
-              window.open(url, 'spotify_auth', 'width=600,height=700');
-            } else {
-              throw error;
-            }
-          }
         }
       } catch (error) {
         console.error('Search error:', error);
@@ -2103,9 +2130,15 @@ export default function App() {
       
       setSearchResults(results);
       setIsLoading(false);
-      console.log(`Searching for "${query}" on ${selectedSource}`);
     }
   };
+
+  // Auto-search on source change if query exists
+  useEffect(() => {
+    if (searchQuery.trim() && screen === 'search') {
+      handleSearch();
+    }
+  }, [selectedSource]);
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
@@ -2114,10 +2147,7 @@ export default function App() {
         return;
       }
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
-        if (event.data.source === 'spotify') {
-          setIsSpotifyAuthenticated(true);
-          handleSearch();
-        }
+        handleSearch();
       }
     };
     window.addEventListener('message', handleMessage);
@@ -2135,8 +2165,7 @@ export default function App() {
   const filteredResults = searchResults.filter(track => {
     const matchesSource = selectedSource === 'All' || 
                          (selectedSource === 'SoundCloud' && track.source === 'soundcloud') ||
-                         (selectedSource === 'YouTube' && track.source === 'youtube') ||
-                         (selectedSource === 'Spotify' && track.source === 'spotify');
+                         (selectedSource === 'YouTube' && track.source === 'youtube');
     
     return matchesSource;
   });
@@ -2159,6 +2188,12 @@ export default function App() {
           />
         )}
       </div>
+
+      {toastMessage && (
+        <div className="fixed top-4 left-1/2 -translate-x-1/2 z-[100] bg-primary text-on-primary px-6 py-3 rounded-full shadow-2xl font-bold text-sm animate-in fade-in slide-in-from-top-4">
+          {toastMessage}
+        </div>
+      )}
 
       {/* Global Header */}
       {screen !== 'player' && <Header />}
@@ -2193,7 +2228,7 @@ export default function App() {
               onLike={toggleLike}
               onAddToPlaylist={(track) => setTrackToAddToPlaylist(track)}
               onAddToQueue={addToQueue}
-              isSpotifyAuthenticated={isSpotifyAuthenticated}
+              showToast={showToast}
             />
           )}
           {screen === 'player' && (
@@ -2206,6 +2241,8 @@ export default function App() {
               setIsShuffle={setIsShuffle}
               isRepeat={isRepeat}
               setIsRepeat={setIsRepeat}
+              playbackRate={playbackRate}
+              setPlaybackRate={setPlaybackRate}
               isLiked={likedTracks.some(t => t.id === currentTrack.id)}
               onLike={() => toggleLike(currentTrack)}
               onAddToPlaylist={() => setTrackToAddToPlaylist(currentTrack)}
@@ -2226,7 +2263,8 @@ export default function App() {
               volume={volume}
               setVolume={setVolume}
               onOpenEqualizer={() => setIsEqualizerOpen(true)}
-              onOpenQueue={() => setScreen('queue')}
+              onOpenQueue={() => navigateTo('queue')}
+              onBack={() => setScreen(prevScreen)}
               queue={queue}
               currentContext={currentContext}
               trendingTracks={trendingTracks}
@@ -2258,7 +2296,7 @@ export default function App() {
               playlists={playlists}
               onSelectPlaylist={(p) => {
                 setActivePlaylist(p);
-                setScreen('playlist');
+                navigateTo('playlist');
               }}
               onCreatePlaylist={createPlaylist}
               onAddToQueue={addToQueue}
@@ -2278,9 +2316,6 @@ export default function App() {
               onAddToQueue={addToQueue}
               onBack={() => setScreen('library')}
             />
-          )}
-          {screen === 'settings' && (
-            <SettingsScreen key="settings" />
           )}
         </AnimatePresence>
 
@@ -2311,7 +2346,7 @@ export default function App() {
             isPlaying={isPlaying}
             setIsPlaying={setIsPlaying}
             onNext={handleNext}
-            setScreen={setScreen}
+            setScreen={navigateTo}
             currentTime={currentTime}
             duration={duration}
           />
@@ -2320,8 +2355,8 @@ export default function App() {
 
       <BottomNav 
         activeScreen={screen} 
-        setScreen={setScreen} 
-        isVisible={isNavVisible}
+        setScreen={navigateTo} 
+        isVisible={isNavVisible && screen !== 'player'}
         setIsVisible={setIsNavVisible}
       />
 

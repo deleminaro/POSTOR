@@ -64,3 +64,16 @@ export const searchTracks = async (query: string): Promise<Track[]> => {
     return [];
   }
 };
+
+export const getTrendingTracks = async (): Promise<Track[]> => {
+  try {
+    const response = await fetch('/api/youtube/trending?limit=25');
+    if (!response.ok) throw new Error(`YouTube trending failed: ${response.status}`);
+    const data = await response.json();
+    if (!data || !data.items) return [];
+    return (data.items as YouTubeSearchResult[]).map(youtubeToTrack);
+  } catch (error) {
+    console.error('YouTube Trending Error:', error);
+    return [];
+  }
+};

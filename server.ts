@@ -34,8 +34,6 @@ const YOUTUBE_API_KEY = process.env.YOUTUBE_API_KEY;
 const GENIUS_ACCESS_TOKEN = process.env.GENIUS_ACCESS_TOKEN;
 const GENIUS_CLIENT_ID = process.env.GENIUS_CLIENT_ID;
 const GENIUS_CLIENT_SECRET = process.env.GENIUS_CLIENT_SECRET;
-const SPOTIFY_CLIENT_ID = process.env.SPOTIFY_CLIENT_ID;
-const SPOTIFY_CLIENT_SECRET = process.env.SPOTIFY_CLIENT_SECRET;
 
 // SoundCloud API Helper with intelligent rotation
 class SoundCloudAPI {
@@ -110,136 +108,81 @@ async function startServer() {
   app.use(express.json());
   app.use(cookieParser());
 
-  // Spotify Auth Routes
-  const getSpotifyRedirectUri = (req: express.Request) => {
-    const baseUrl = (process.env.APP_URL || (req.headers.origin as string) || `https://${req.headers.host}`).replace(/\/$/, '');
-    return `${baseUrl}/api/auth/spotify/callback`;
-  };
-
-  app.get('/api/auth/spotify/url', (req, res) => {
-    if (!SPOTIFY_CLIENT_ID) {
-      return res.status(500).json({ error: 'Spotify Client ID not configured' });
-    }
-    const redirectUri = getSpotifyRedirectUri(req);
-    const scope = 'user-read-private user-read-email user-library-read';
-    const params = new URLSearchParams({
-      client_id: SPOTIFY_CLIENT_ID,
-      response_type: 'code',
-      redirect_uri: redirectUri,
-      scope: scope,
-      show_dialog: 'true'
-    });
-    res.json({ url: `https://accounts.spotify.com/authorize?${params.toString()}` });
-  });
-
-  app.get(['/api/auth/spotify/callback', '/api/auth/spotify/callback/'], async (req, res) => {
-    const { code } = req.query;
-    if (!code) return res.status(400).send('Code missing');
-
-    const redirectUri = getSpotifyRedirectUri(req);
-    try {
-      const response = await fetch('https://accounts.spotify.com/api/token', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-          'Authorization': 'Basic ' + Buffer.from(SPOTIFY_CLIENT_ID + ':' + SPOTIFY_CLIENT_SECRET).toString('base64')
-        },
-        body: new URLSearchParams({
-          grant_type: 'authorization_code',
-          code: code as string,
-          redirect_uri: redirectUri
-        })
-      });
-
-      const data = await response.json();
-      if (data.access_token) {
-        res.cookie('spotify_access_token', data.access_token, {
-          httpOnly: true,
-          secure: true,
-          sameSite: 'none',
-          maxAge: data.expires_in * 1000
-        });
-        res.send(`
-          <html>
-            <body>
-              <script>
-                if (window.opener) {
-                  window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', source: 'spotify' }, '*');
-                  window.close();
-                } else {
-                  window.location.href = '/';
-                }
-              </script>
-              <p>Authentication successful. This window should close automatically.</p>
-            </body>
-          </html>
-        `);
-      } else {
-        res.status(500).send('Failed to get access token');
-      }
-    } catch (error) {
-      console.error('Spotify Callback Error:', error);
-      res.status(500).send('Internal Server Error');
-    }
-  });
-
-  app.get('/api/spotify/status', (req, res) => {
-    const accessToken = req.cookies.spotify_access_token;
-    res.json({ authenticated: !!accessToken });
-  });
-
-  app.get('/api/spotify/search', async (req, res) => {
-    const { q, limit = 50 } = req.query;
-    const accessToken = req.cookies.spotify_access_token;
-
-    if (!SPOTIFY_CLIENT_ID || !SPOTIFY_CLIENT_SECRET) {
-      return res.status(500).json({ error: 'Spotify API credentials (SPOTIFY_CLIENT_ID, SPOTIFY_CLIENT_SECRET) are not configured in the Secrets panel.' });
-    }
-
-    if (!accessToken) {
-      return res.status(401).json({ error: 'Spotify not authenticated' });
-    }
-
-    try {
-      console.log(`[Spotify] Searching for: ${q}`);
-      const response = await fetch(`https://api.spotify.com/v1/search?q=${encodeURIComponent(q as string)}&type=track&limit=${limit}`, {
-        headers: {
-          'Authorization': `Bearer ${accessToken}`
-        }
-      });
-
-      if (!response.ok) {
-        const errText = await response.text();
-        console.error(`[Spotify] Search API failed with status ${response.status}:`, errText);
-        
-        if (response.status === 401) {
-          res.clearCookie('spotify_access_token');
-          return res.status(401).json({ error: 'Spotify session expired' });
-        }
-        
-        try {
-          const errData = JSON.parse(errText);
-          return res.status(response.status).json(errData);
-        } catch (e) {
-          return res.status(response.status).json({ error: 'Spotify search failed', details: errText });
-        }
-      }
-
-      const data = await response.json();
-      console.log(`[Spotify] Search for "${q}" returned ${data.tracks?.items?.length || 0} results.`);
-      res.json(data);
-    } catch (error) {
-      console.error('Spotify Search Error:', error);
-      res.status(500).json({ error: 'Internal Server Error', message: error instanceof Error ? error.message : String(error) });
-    }
-  });
-
-  // Genius Lyrics Proxy Route
+  // Lyrics Proxy Route
   app.get('/api/lyrics', async (req, res) => {
     const { title, artist } = req.query;
     if (!title || !artist) return res.status(400).json({ error: 'Title and artist required' });
 
+    const cleanTitle = String(title).replace(/\([^)]*\)|\[[^\]]*\]/g, '').trim();
+    const cleanArtist = String(artist).replace(/\([^)]*\)|\[[^\]]*\]/g, '').trim();
+
     try {
+      // 1. Try LRCLIB first (fast, reliable, no auth needed)
+      try {
+        const lrclibUrl = `https://lrclib.net/api/get?artist_name=${encodeURIComponent(cleanArtist)}&track_name=${encodeURIComponent(cleanTitle)}`;
+        const lrclibRes = await fetch(lrclibUrl, {
+          headers: { 'User-Agent': 'Postor Music Player (https://postor.onrender.com)' }
+        });
+        
+        if (lrclibRes.ok) {
+          const lrclibData = await lrclibRes.json();
+          if (lrclibData.plainLyrics) {
+            console.log('[Lyrics] Found on LRCLIB (get)');
+            return res.json({ lyrics: lrclibData.plainLyrics });
+          }
+        } else {
+          // Fallback to LRCLIB search
+          const searchUrl = `https://lrclib.net/api/search?q=${encodeURIComponent(cleanTitle + ' ' + cleanArtist)}`;
+          const searchRes = await fetch(searchUrl, {
+            headers: { 'User-Agent': 'Postor Music Player (https://postor.onrender.com)' }
+          });
+          
+          if (searchRes.ok) {
+            const searchData = await searchRes.json();
+            if (Array.isArray(searchData) && searchData.length > 0) {
+              const trackWithLyrics = searchData.find(t => t.plainLyrics);
+              if (trackWithLyrics) {
+                console.log('[Lyrics] Found on LRCLIB (search)');
+                return res.json({ lyrics: trackWithLyrics.plainLyrics });
+              }
+            }
+          }
+        }
+      } catch (lrclibError) {
+        console.warn('LRCLIB failed:', lrclibError);
+      }
+
+      // 2. Try Lyrist API
+      try {
+        const lyristUrl = `https://lyrist.vercel.app/api/${encodeURIComponent(cleanTitle)}`;
+        const lyristRes = await fetch(lyristUrl);
+        if (lyristRes.ok) {
+          const lyristData = await lyristRes.json();
+          if (lyristData.lyrics) {
+            console.log('[Lyrics] Found on Lyrist');
+            return res.json({ lyrics: lyristData.lyrics });
+          }
+        }
+      } catch (lyristError) {
+        console.warn('Lyrist failed:', lyristError);
+      }
+
+      // 3. Try Some Random API
+      try {
+        const sraUrl = `https://some-random-api.com/lyrics?title=${encodeURIComponent(cleanTitle)}`;
+        const sraRes = await fetch(sraUrl);
+        if (sraRes.ok) {
+          const sraData = await sraRes.json();
+          if (sraData.lyrics) {
+            console.log('[Lyrics] Found on Some Random API');
+            return res.json({ lyrics: sraData.lyrics });
+          }
+        }
+      } catch (sraError) {
+        console.warn('Some Random API failed:', sraError);
+      }
+
+      // 4. Try Genius
       let accessToken = GENIUS_ACCESS_TOKEN;
 
       // Fallback: If no static token, try to exchange ID/Secret for one
@@ -345,8 +288,8 @@ async function startServer() {
       console.warn('Genius Lyrics Error, falling back to other sources:', error.message);
       
       try {
-        // Fallback 1: lyrics.ovh
-        const ovhUrl = `https://api.lyrics.ovh/v1/${encodeURIComponent(artist as string)}/${encodeURIComponent(title as string)}`;
+        // Fallback 5: lyrics.ovh
+        const ovhUrl = `https://api.lyrics.ovh/v1/${encodeURIComponent(cleanArtist)}/${encodeURIComponent(cleanTitle)}`;
         const ovhRes = await fetch(ovhUrl);
         if (ovhRes.ok) {
           const ovhData = await ovhRes.json();
@@ -360,18 +303,19 @@ async function startServer() {
       }
 
       try {
-        // Fallback 2: Gemini
+        // Fallback 6: Gemini
         const key = getGeminiKey();
 
         if (!key) {
-          throw new Error('GEMINI_API_KEY is not configured. Please add it to enable lyrics fallback.');
+          console.warn('[Lyrics] GEMINI_API_KEY not configured, skipping Gemini fallback.');
+          return res.status(404).json({ error: 'Lyrics not found' });
         }
 
         console.log('[Lyrics] Attempting Gemini fallback...');
         const geminiAi = new GoogleGenAI({ apiKey: key });
         const response = await geminiAi.models.generateContent({
           model: "gemini-3-flash-preview",
-          contents: `Find and provide the full lyrics for the song "${title}" by "${artist}". 
+          contents: `Find and provide the full lyrics for the song "${cleanTitle}" by "${cleanArtist}". 
           If you cannot find the exact lyrics, provide a polite message saying lyrics are unavailable.
           Format the output as plain text with line breaks. Do not include any other text, just the lyrics.`,
           config: {
@@ -388,10 +332,7 @@ async function startServer() {
         res.status(404).json({ error: 'Lyrics not found' });
       } catch (geminiError: any) {
         console.error('Gemini Lyrics Fallback Error:', geminiError);
-        const message = (geminiError?.message || 'Unknown error').toLowerCase();
-        res.status(500).json({ 
-          error: `Lyrics service unavailable. ${message.includes('api key') || message.includes('api_key') ? 'Please check your Gemini API key configuration.' : 'Please try again later.'}` 
-        });
+        res.status(404).json({ error: 'Lyrics not found' });
       }
     }
   });
@@ -556,6 +497,34 @@ async function startServer() {
       res.json({ ...searchData, items: itemsWithDuration });
     } catch (error) {
       console.error('Proxy YouTube Search Error:', error);
+      res.status(500).json({ error: 'Internal Server Error' });
+    }
+  });
+
+  app.get('/api/youtube/trending', async (req, res) => {
+    const { limit = 25 } = req.query;
+    if (!YOUTUBE_API_KEY) {
+      return res.status(500).json({ error: 'YouTube API key not configured' });
+    }
+    try {
+      const trendingUrl = `https://www.googleapis.com/youtube/v3/videos?part=snippet,contentDetails&chart=mostPopular&videoCategoryId=10&maxResults=${limit}&key=${YOUTUBE_API_KEY}`;
+      const trendingRes = await fetch(trendingUrl);
+      if (!trendingRes.ok) {
+        const text = await trendingRes.text();
+        return res.status(trendingRes.status).json({ error: 'YouTube Trending API error', details: text });
+      }
+      const trendingData = await trendingRes.json();
+      
+      // Map contentDetails.duration to the same format as search results
+      const itemsWithDuration = trendingData.items.map((item: any) => ({
+        ...item,
+        id: { videoId: item.id }, // Normalize ID structure to match search results
+        duration: item.contentDetails?.duration || null
+      }));
+
+      res.json({ ...trendingData, items: itemsWithDuration });
+    } catch (error) {
+      console.error('Proxy YouTube Trending Error:', error);
       res.status(500).json({ error: 'Internal Server Error' });
     }
   });
