@@ -60,24 +60,7 @@ export const RECENTLY_PLAYED: Track[] = [
   },
 ];
 
-export const PLAYLISTS: Playlist[] = [
-  { 
-    id: 'p1', 
-    title: 'Midnight Echoes', 
-    description: 'Late night vibes',
-    coverUrl: 'https://picsum.photos/seed/night/400/400',
-    tracks: [RECENTLY_PLAYED[0], RECENTLY_PLAYED[1]],
-    createdAt: Date.now()
-  },
-  { 
-    id: 'p2', 
-    title: 'Cyberpunk Pulse', 
-    description: 'High energy beats',
-    coverUrl: 'https://picsum.photos/seed/cyber/400/400',
-    tracks: [RECENTLY_PLAYED[2]],
-    createdAt: Date.now()
-  },
-];
+export const PLAYLISTS: Playlist[] = [];
 
 export const ARTISTS = [
   { id: 'a1', name: 'Solaris Flux', genre: 'Electronic / Ambient', monthly: '1.2M', avatar: 'https://picsum.photos/seed/artist1/200/200', verified: true },

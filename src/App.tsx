@@ -3,7 +3,7 @@
  * SPDX-License-Identifier: Apache-2.0
  */
 
-import React, { useState, useEffect, useRef, useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { 
   Home as HomeIcon, 
   Search as SearchIcon, 
@@ -37,7 +37,8 @@ import {
   GripVertical,
   ListPlus,
   X,
-  Gauge
+  Gauge,
+  ListMusic
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactPlayer from 'react-player';
@@ -268,6 +269,35 @@ const Header = () => (
   </header>
 );
 
+// --- Hooks ---
+export function useLongPress(callback: (e: any, track: Track, context?: any) => void, ms: number = 500) {
+  const timerRef = useRef<NodeJS.Timeout | null>(null);
+
+  const start = useCallback((e: React.TouchEvent, track: Track, context?: any) => {
+    const clientX = e.touches[0].clientX;
+    const clientY = e.touches[0].clientY;
+    
+    timerRef.current = setTimeout(() => {
+      callback({ clientX, clientY, preventDefault: () => {} }, track, context);
+      timerRef.current = null;
+    }, ms);
+  }, [callback, ms]);
+
+  const clear = useCallback(() => {
+    if (timerRef.current) {
+      clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }, []);
+
+  return useCallback((track: Track, context?: any) => ({
+    onTouchStart: (e: React.TouchEvent) => start(e, track, context),
+    onTouchEnd: clear,
+    onTouchMove: clear,
+    onTouchCancel: clear,
+  }), [start, clear]);
+}
+
 // --- Screens ---
 
 const HomeScreen: React.FC<{ 
@@ -277,7 +307,11 @@ const HomeScreen: React.FC<{
   onLike: (t: Track) => void;
   onAddToPlaylist: (t: Track) => void;
   onAddToQueue: (t: Track) => void;
-}> = ({ onPlay, recentlyPlayed, likedTracks, onLike, onAddToPlaylist, onAddToQueue }) => (
+  onContextMenu: (e: any, track: Track, context?: { type: 'playlist' | 'favorites', id?: string }) => void;
+}> = ({ onPlay, recentlyPlayed, likedTracks, onLike, onAddToPlaylist, onAddToQueue, onContextMenu }) => {
+  const getLongPressProps = useLongPress(onContextMenu);
+
+  return (
   <motion.div 
     initial={{ opacity: 0, y: 20 }}
     animate={{ opacity: 1, y: 0 }}
@@ -325,6 +359,8 @@ const HomeScreen: React.FC<{
               whileHover={{ y: -8 }}
               className="group cursor-pointer space-y-4" 
               onClick={() => onPlay(track)}
+              onContextMenu={(e) => onContextMenu(e, track)}
+              {...getLongPressProps(track)}
             >
               <div className="relative aspect-square rounded-3xl overflow-hidden album-shadow bg-black">
                 <img 
@@ -349,7 +385,8 @@ const HomeScreen: React.FC<{
       </section>
     )}
   </motion.div>
-);
+  );
+};
 
 const SearchScreen: React.FC<{
   searchQuery: string;
@@ -367,6 +404,7 @@ const SearchScreen: React.FC<{
   onAddToPlaylist: (t: Track) => void;
   onAddToQueue: (t: Track) => void;
   showToast: (msg: string) => void;
+  onContextMenu: (e: any, track: Track, context?: { type: 'playlist' | 'favorites', id?: string }) => void;
 }> = ({ 
   searchQuery, 
   setSearchQuery, 
@@ -382,8 +420,10 @@ const SearchScreen: React.FC<{
   onLike,
   onAddToPlaylist,
   onAddToQueue,
-  showToast
+  showToast,
+  onContextMenu
 }) => {
+  const getLongPressProps = useLongPress(onContextMenu);
   const sources = ['All', 'SoundCloud', 'YouTube'];
 
   const handleConnectSoundCloud = async () => {
@@ -482,6 +522,8 @@ const SearchScreen: React.FC<{
                 key={`${track.id}-${track.source}`}
                 className="group flex items-center gap-4 p-4 bg-white/5 border border-white/5 rounded-3xl hover:bg-white/10 hover:border-white/10 transition-all cursor-pointer"
                 onClick={() => onPlay(track)}
+                onContextMenu={(e) => onContextMenu(e, track)}
+                {...getLongPressProps(track)}
               >
                 <div className="relative w-16 h-16 rounded-2xl overflow-hidden flex-shrink-0 shadow-lg">
                   <img 
@@ -555,7 +597,8 @@ const PlayerScreen: React.FC<{
   trendingTracks: Track[];
   playbackRate: number;
   setPlaybackRate: (r: number) => void;
-}> = ({ track, isPlaying, setIsPlaying, isShuffle, setIsShuffle, isRepeat, setIsRepeat, isLiked, onLike, onAddToPlaylist, onAddToQueue, onNext, onPrev, currentTime, duration, isBuffering, onSeek, setDuration, volume, setVolume, onOpenEqualizer, onOpenQueue, onBack, queue, currentContext, trendingTracks, playbackRate, setPlaybackRate }) => {
+  isVisible: boolean;
+}> = ({ track, isPlaying, setIsPlaying, isShuffle, setIsShuffle, isRepeat, setIsRepeat, isLiked, onLike, onAddToPlaylist, onAddToQueue, onNext, onPrev, currentTime, duration, isBuffering, onSeek, setDuration, volume, setVolume, onOpenEqualizer, onOpenQueue, onBack, queue, currentContext, trendingTracks, playbackRate, setPlaybackRate, isVisible }) => {
   const playerRef = useRef<any>(null);
   const [isSeeking, setIsSeeking] = useState(false);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
@@ -622,9 +665,10 @@ const PlayerScreen: React.FC<{
   return (
     <motion.div 
       initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      exit={{ opacity: 0, y: -20 }}
+      animate={{ opacity: isVisible ? 1 : 0, y: isVisible ? 0 : 20, pointerEvents: isVisible ? 'auto' : 'none' }}
+      transition={{ duration: 0.3 }}
       className="fixed inset-0 z-40 flex flex-col md:relative md:inset-auto md:z-0 md:h-full"
+      style={{ visibility: isVisible ? 'visible' : 'hidden' }}
     >
       {/* Back Button for Mobile */}
       <button 
@@ -634,10 +678,10 @@ const PlayerScreen: React.FC<{
         <ChevronDown size={24} />
       </button>
 
-      <div className="flex-1 flex flex-col items-center justify-center p-6 md:p-12 space-y-8 md:space-y-12">
+      <div className="flex-1 flex flex-col md:flex-row items-center justify-center p-6 md:p-12 gap-8 md:gap-16 max-w-[1200px] mx-auto w-full">
         
         {/* Album Art Section */}
-        <div className="relative w-full max-w-[320px] md:max-w-[450px] aspect-square mx-auto">
+        <div className="relative w-full max-w-[320px] md:max-w-[500px] aspect-square shrink-0">
           <motion.div
             key={track.id}
             initial={{ scale: 0.9, opacity: 0 }}
@@ -714,7 +758,7 @@ const PlayerScreen: React.FC<{
         </div>
 
         {/* Track Info & Controls Panel */}
-        <div className="w-full max-w-[500px] glass-panel p-8 md:p-10 space-y-8">
+        <div className="w-full max-w-[500px] glass-panel p-8 md:p-10 space-y-8 rounded-3xl border border-white/5">
           {nextTrack && (
             <div className="flex items-center gap-3 px-4 py-2 bg-primary/10 rounded-2xl border border-primary/20 animate-in fade-in slide-in-from-top-4 duration-500">
               <div className="w-8 h-8 rounded-xl overflow-hidden shrink-0">
@@ -803,67 +847,84 @@ const PlayerScreen: React.FC<{
           </div>
 
           {/* Bottom Actions */}
-          <div className="flex items-center justify-between pt-6 border-t border-white/5">
-            <div className="flex items-center gap-4">
-              <button 
-                onClick={fetchLyrics}
-                className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all ${showLyrics ? 'bg-primary text-on-primary' : 'bg-white/5 text-on-surface/40 hover:text-on-surface'}`}
-              >
-                <Mic2 size={14} />
-                Lyrics
-              </button>
-              <button 
-                onClick={onOpenQueue}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest bg-white/5 text-on-surface/40 hover:text-on-surface transition-all"
-              >
-                <ListPlus size={14} />
-                Queue
-              </button>
-              <div className="relative">
+          <div className="flex flex-col gap-8 pt-6 border-t border-white/5">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-4">
                 <button 
-                  onClick={() => setIsSpeedMenuOpen(!isSpeedMenuOpen)}
-                  className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all ${isSpeedMenuOpen ? 'bg-primary text-on-primary' : 'bg-white/5 text-on-surface/40 hover:text-on-surface'}`}
+                  onClick={fetchLyrics}
+                  className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all ${showLyrics ? 'bg-primary text-on-primary' : 'bg-white/5 text-on-surface/40 hover:text-on-surface'}`}
                 >
-                  <Gauge size={14} />
-                  {playbackRate}x
+                  <Mic2 size={14} />
+                  Lyrics
                 </button>
-                <AnimatePresence>
-                  {isSpeedMenuOpen && (
-                    <motion.div 
-                      initial={{ opacity: 0, y: 10, scale: 0.95 }}
-                      animate={{ opacity: 1, y: 0, scale: 1 }}
-                      exit={{ opacity: 0, y: 10, scale: 0.95 }}
-                      className="absolute bottom-full left-0 mb-2 flex flex-col bg-surface border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50 min-w-[100px]"
-                    >
-                      {[0.5, 1, 1.5, 2].map(speed => (
-                        <button
-                          key={speed}
-                          onClick={() => {
-                            setPlaybackRate(speed);
-                            setIsSpeedMenuOpen(false);
-                          }}
-                          className={`px-6 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-primary hover:text-on-primary transition-all text-left whitespace-nowrap ${playbackRate === speed ? 'bg-primary/20 text-primary' : 'text-on-surface/60'}`}
-                        >
-                          {speed}x
-                        </button>
-                      ))}
-                    </motion.div>
-                  )}
-                </AnimatePresence>
+                <button 
+                  onClick={onOpenQueue}
+                  className="flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest bg-white/5 text-on-surface/40 hover:text-on-surface transition-all"
+                >
+                  <ListPlus size={14} />
+                  Queue
+                </button>
+                <div className="relative">
+                  <button 
+                    onClick={() => setIsSpeedMenuOpen(!isSpeedMenuOpen)}
+                    className={`flex items-center gap-2 px-4 py-2 rounded-xl font-bold text-[10px] uppercase tracking-widest transition-all ${isSpeedMenuOpen ? 'bg-primary text-on-primary' : 'bg-white/5 text-on-surface/40 hover:text-on-surface'}`}
+                  >
+                    <Gauge size={14} />
+                    {playbackRate}x
+                  </button>
+                  <AnimatePresence>
+                    {isSpeedMenuOpen && (
+                      <motion.div 
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        exit={{ opacity: 0, y: 10, scale: 0.95 }}
+                        className="absolute bottom-full left-0 mb-2 flex flex-col bg-surface border border-white/10 rounded-xl overflow-hidden shadow-2xl z-50 min-w-[100px]"
+                      >
+                        {[0.5, 1, 1.5, 2].map(speed => (
+                          <button
+                            key={speed}
+                            onClick={() => {
+                              setPlaybackRate(speed);
+                              setIsSpeedMenuOpen(false);
+                            }}
+                            className={`px-6 py-3 text-[10px] font-black uppercase tracking-widest hover:bg-primary hover:text-on-primary transition-all text-left whitespace-nowrap ${playbackRate === speed ? 'bg-primary/20 text-primary' : 'text-on-surface/60'}`}
+                          >
+                            {speed}x
+                          </button>
+                        ))}
+                      </motion.div>
+                    )}
+                  </AnimatePresence>
+                </div>
               </div>
             </div>
             
-            <div className="flex items-center gap-3 group">
-              <Volume2 size={14} className="text-on-surface/40 group-hover:text-primary transition-colors" />
-              <input 
-                type="range" 
-                min="0" 
-                max="1" 
-                step="0.01" 
-                value={volume} 
-                onChange={(e) => setVolume(parseFloat(e.target.value))}
-                className="w-20 md:w-24 h-1 bg-white/10 rounded-full appearance-none cursor-pointer accent-primary"
-              />
+            {/* Redesigned Volume Control */}
+            <div className="flex items-center gap-4 group w-full bg-white/5 p-4 rounded-2xl border border-white/5">
+              <button 
+                onClick={() => setVolume(volume === 0 ? 0.5 : 0)}
+                className="text-on-surface/40 hover:text-primary transition-colors"
+              >
+                {volume === 0 ? <VolumeX size={18} /> : volume < 0.5 ? <Volume1 size={18} /> : <Volume2 size={18} />}
+              </button>
+              <div 
+                className="flex-1 h-2 bg-white/10 rounded-full cursor-pointer relative overflow-hidden"
+                onClick={(e) => {
+                  const rect = e.currentTarget.getBoundingClientRect();
+                  const x = e.clientX - rect.left;
+                  const pct = Math.max(0, Math.min(1, x / rect.width));
+                  setVolume(pct);
+                }}
+              >
+                <motion.div 
+                  className="absolute h-full bg-primary"
+                  initial={false}
+                  animate={{ width: `${volume * 100}%` }}
+                />
+              </div>
+              <span className="text-[10px] font-black text-on-surface/40 w-8 text-right">
+                {Math.round(volume * 100)}%
+              </span>
             </div>
           </div>
         </div>
@@ -936,6 +997,12 @@ const PlayerScreen: React.FC<{
   );
 };
 
+const getPlaylistCover = (playlist: Playlist) => {
+  if (playlist.customCoverUrl) return playlist.customCoverUrl;
+  if (playlist.tracks && playlist.tracks.length > 0) return playlist.tracks[0].coverUrl;
+  return playlist.coverUrl || 'https://images.unsplash.com/photo-1614680376593-902f74cf0d41?q=80&w=400&auto=format&fit=crop';
+};
+
 const PlaylistView = ({ 
   playlist, 
   onBack, 
@@ -944,7 +1011,8 @@ const PlaylistView = ({
   onDeletePlaylist,
   onReorder,
   onUpdateCover,
-  onAddToQueue
+  onAddToQueue,
+  onContextMenu
 }: { 
   playlist: Playlist, 
   onBack: () => void, 
@@ -953,8 +1021,10 @@ const PlaylistView = ({
   onDeletePlaylist: (id: string) => void,
   onReorder: (playlistId: string, start: number, end: number) => void,
   onUpdateCover: (playlistId: string, url: string) => void,
-  onAddToQueue: (t: Track) => void
+  onAddToQueue: (t: Track) => void,
+  onContextMenu: (e: any, track: Track, context?: { type: 'playlist' | 'favorites', id?: string }) => void
 }) => {
+  const getLongPressProps = useLongPress(onContextMenu);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
@@ -982,7 +1052,7 @@ const PlaylistView = ({
           onClick={() => fileInputRef.current?.click()}
         >
           <img 
-            src={playlist.coverUrl} 
+            src={getPlaylistCover(playlist)} 
             alt={playlist.title} 
             className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
             referrerPolicy="no-referrer" 
@@ -1035,6 +1105,8 @@ const PlaylistView = ({
               <div 
                 key={`${track.id}-${index}`}
                 className="group flex items-center gap-4 p-4 bg-white/5 border border-white/5 rounded-3xl hover:bg-white/10 hover:border-white/10 transition-all"
+                onContextMenu={(e) => onContextMenu(e, track, { type: 'playlist', id: playlist.id })}
+                {...getLongPressProps(track, { type: 'playlist', id: playlist.id })}
               >
                 <div className="w-12 h-12 rounded-2xl overflow-hidden grayscale group-hover:grayscale-0 transition-all duration-500 shrink-0">
                   <img src={track.coverUrl} alt={track.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -1123,7 +1195,8 @@ const QueueView = ({
   onPlay, 
   onRemove, 
   onReorder,
-  onClear
+  onClear,
+  onContextMenu
 }: { 
   queue: Track[], 
   currentTrack: Track | null,
@@ -1133,8 +1206,10 @@ const QueueView = ({
   onPlay: (t: Track, index: number) => void,
   onRemove: (trackId: string, index: number) => void,
   onReorder: (start: number, end: number) => void,
-  onClear: () => void
+  onClear: () => void,
+  onContextMenu: (e: any, track: Track, context?: { type: 'playlist' | 'favorites', id?: string }) => void
 }) => {
+  const getLongPressProps = useLongPress(onContextMenu);
   const contextTracks = useMemo(() => {
     const tracks = currentContext.length > 0 ? currentContext : trendingTracks;
     if (!currentTrack) return tracks;
@@ -1210,6 +1285,8 @@ const QueueView = ({
               <div 
                 key={`${track.id}-${index}`}
                 className="group flex items-center gap-4 p-4 bg-white/5 border border-white/5 rounded-3xl hover:bg-white/10 hover:border-white/10 transition-all"
+                onContextMenu={(e) => onContextMenu(e, track)}
+                {...getLongPressProps(track)}
               >
                 <div className="w-12 h-12 rounded-2xl overflow-hidden grayscale group-hover:grayscale-0 transition-all duration-500 shrink-0">
                   <img src={track.coverUrl} alt={track.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -1323,7 +1400,7 @@ const AddToPlaylistModal = ({
               className="w-full flex items-center gap-4 p-4 bg-white/5 border border-white/5 rounded-3xl hover:bg-white/10 hover:border-white/10 transition-all group text-left"
             >
               <div className="w-12 h-12 rounded-2xl overflow-hidden grayscale group-hover:grayscale-0 shrink-0">
-                <img src={playlist.coverUrl} alt={playlist.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
+                <img src={getPlaylistCover(playlist)} alt={playlist.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
               </div>
               <div className="flex-1 min-w-0">
                 <h4 className="font-black text-sm uppercase tracking-tight text-on-surface truncate">{playlist.title}</h4>
@@ -1369,7 +1446,9 @@ const LibraryScreen: React.FC<{
   onSelectPlaylist: (p: Playlist) => void;
   onCreatePlaylist: (title: string) => void;
   onAddToQueue: (t: Track) => void;
-}> = ({ onPlay, onShuffleAll, likedTracks, playlists, onSelectPlaylist, onCreatePlaylist, onAddToQueue }) => {
+  onContextMenu: (e: any, track: Track, context?: { type: 'playlist' | 'favorites', id?: string }) => void;
+}> = ({ onPlay, onShuffleAll, likedTracks, playlists, onSelectPlaylist, onCreatePlaylist, onAddToQueue, onContextMenu }) => {
+  const getLongPressProps = useLongPress(onContextMenu);
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [newPlaylistTitle, setNewPlaylistTitle] = useState('');
 
@@ -1430,6 +1509,8 @@ const LibraryScreen: React.FC<{
               key={track.id} 
               onClick={() => onPlay(track)} 
               className="group flex items-center gap-4 sm:gap-8 p-4 sm:p-6 bg-white/5 border border-white/5 rounded-3xl hover:bg-white/10 hover:border-white/10 transition-all cursor-pointer"
+              onContextMenu={(e) => onContextMenu(e, track, { type: 'favorites' })}
+              {...getLongPressProps(track, { type: 'favorites' })}
             >
               <div className="w-12 h-12 sm:w-20 sm:h-20 rounded-2xl overflow-hidden grayscale group-hover:grayscale-0 transition-all duration-500 shrink-0">
                 <img src={track.coverUrl} alt={track.title} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
@@ -1486,7 +1567,7 @@ const LibraryScreen: React.FC<{
             <div className="aspect-square rounded-3xl overflow-hidden relative bg-black album-shadow">
               <img 
                 className="w-full h-full object-cover grayscale group-hover:grayscale-0 group-hover:scale-110 transition-all duration-700 opacity-60 group-hover:opacity-100" 
-                src={playlist.coverUrl} 
+                src={getPlaylistCover(playlist)} 
                 alt={playlist.title}
                 referrerPolicy="no-referrer"
               />
@@ -1552,6 +1633,50 @@ export default function App() {
   const [prevScreen, setPrevScreen] = useState<Screen>('home');
   const [currentTrack, setCurrentTrack] = useState<Track>(RECENTLY_PLAYED[0]);
 
+  const [contextMenu, setContextMenu] = useState<{
+    x: number;
+    y: number;
+    track: Track;
+    context?: { type: 'playlist' | 'favorites', id?: string };
+  } | null>(null);
+
+  const handleContextMenu = (e: any, track: Track, context?: { type: 'playlist' | 'favorites', id?: string }) => {
+    if (e.preventDefault) e.preventDefault();
+    
+    let clientX, clientY;
+    if (e.touches && e.touches.length > 0) {
+      clientX = e.touches[0].clientX;
+      clientY = e.touches[0].clientY;
+    } else if (e.clientX !== undefined) {
+      clientX = e.clientX;
+      clientY = e.clientY;
+    } else {
+      clientX = window.innerWidth / 2;
+      clientY = window.innerHeight / 2;
+    }
+
+    setContextMenu({
+      x: clientX,
+      y: clientY,
+      track,
+      context
+    });
+
+    if (typeof navigator !== 'undefined' && navigator.vibrate) {
+      navigator.vibrate(50);
+    }
+  };
+
+  const closeContextMenu = () => {
+    setContextMenu(null);
+  };
+
+  useEffect(() => {
+    const handleClickOutside = () => closeContextMenu();
+    window.addEventListener('click', handleClickOutside);
+    return () => window.removeEventListener('click', handleClickOutside);
+  }, []);
+
   const navigateTo = (newScreen: Screen) => {
     if (screen !== 'player') {
       setPrevScreen(screen);
@@ -1607,7 +1732,16 @@ export default function App() {
 
   const [playlists, setPlaylists] = useState<Playlist[]>(() => {
     const saved = localStorage.getItem('playlists');
-    return saved ? JSON.parse(saved) : PLAYLISTS;
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        // Filter out the old default playlists if they exist in localStorage
+        return parsed.filter((p: Playlist) => p.id !== 'p1' && p.id !== 'p2');
+      } catch (e) {
+        return PLAYLISTS;
+      }
+    }
+    return PLAYLISTS;
   });
 
   const [activePlaylist, setActivePlaylist] = useState<Playlist | null>(null);
@@ -1638,7 +1772,7 @@ export default function App() {
       id: `p${Date.now()}`,
       title,
       description: 'New Playlist',
-      coverUrl: `https://picsum.photos/seed/${Date.now()}/400/400`,
+      coverUrl: '',
       tracks: [],
       createdAt: Date.now()
     };
@@ -1726,8 +1860,9 @@ export default function App() {
   };
   
   // Helper for safe audio playback
-  const safePlay = async () => {
-    if (currentTrack.source !== 'youtube' && audio.src && audio.src !== window.location.href) {
+  const safePlay = async (trackToCheck?: Track) => {
+    const track = trackToCheck || currentTrack;
+    if (track.source !== 'youtube' && audio.src && audio.src !== window.location.href) {
       try {
         audio.playbackRate = playbackRateRef.current;
         playPromiseRef.current = audio.play();
@@ -1900,6 +2035,15 @@ export default function App() {
     await safePause();
     audio.removeAttribute('src');
     audio.load();
+    
+    // Unlock audio element on mobile/Safari by playing empty source synchronously
+    try {
+      const p = audio.play();
+      if (p !== undefined) {
+        p.catch(() => {});
+      }
+    } catch (e) {}
+
     setCurrentTime(0);
     setCurrentTrack(track);
     setIsPlaying(true);
@@ -1945,12 +2089,12 @@ export default function App() {
           hls.attachMedia(audio);
           hlsRef.current = hls;
           hls.on(Hls.Events.MANIFEST_PARSED, () => {
-            safePlay();
+            safePlay(track);
           });
         } else if (audio.canPlayType('application/vnd.apple.mpegurl')) {
           // Native HLS support (Safari)
           audio.src = streamUrl;
-          safePlay();
+          safePlay(track);
         }
       } else {
         if (hlsRef.current) {
@@ -1958,7 +2102,7 @@ export default function App() {
           hlsRef.current = null;
         }
         audio.src = streamUrl;
-        safePlay();
+        safePlay(track);
       }
     } else {
       console.warn('Could not get stream URL for track:', track.id, 'falling back to YouTube');
@@ -2209,6 +2353,7 @@ export default function App() {
               onLike={toggleLike}
               onAddToPlaylist={(track) => setTrackToAddToPlaylist(track)}
               onAddToQueue={addToQueue}
+              onContextMenu={handleContextMenu}
             />
           )}
           {screen === 'search' && (
@@ -2229,45 +2374,7 @@ export default function App() {
               onAddToPlaylist={(track) => setTrackToAddToPlaylist(track)}
               onAddToQueue={addToQueue}
               showToast={showToast}
-            />
-          )}
-          {screen === 'player' && (
-            <PlayerScreen 
-              key="player" 
-              track={currentTrack} 
-              isPlaying={isPlaying}
-              setIsPlaying={setIsPlaying}
-              isShuffle={isShuffle}
-              setIsShuffle={setIsShuffle}
-              isRepeat={isRepeat}
-              setIsRepeat={setIsRepeat}
-              playbackRate={playbackRate}
-              setPlaybackRate={setPlaybackRate}
-              isLiked={likedTracks.some(t => t.id === currentTrack.id)}
-              onLike={() => toggleLike(currentTrack)}
-              onAddToPlaylist={() => setTrackToAddToPlaylist(currentTrack)}
-              onAddToQueue={() => addToQueue(currentTrack)}
-              onNext={handleNext}
-              onPrev={handlePrev}
-              currentTime={currentTime}
-              duration={duration}
-              isBuffering={isBuffering}
-              setDuration={setDuration}
-              onSeek={(time) => { 
-                if (currentTrack.source === 'youtube') {
-                  setCurrentTime(time);
-                } else {
-                  audio.currentTime = time; 
-                }
-              }}
-              volume={volume}
-              setVolume={setVolume}
-              onOpenEqualizer={() => setIsEqualizerOpen(true)}
-              onOpenQueue={() => navigateTo('queue')}
-              onBack={() => setScreen(prevScreen)}
-              queue={queue}
-              currentContext={currentContext}
-              trendingTracks={trendingTracks}
+              onContextMenu={handleContextMenu}
             />
           )}
           {screen === 'queue' && (
@@ -2285,6 +2392,7 @@ export default function App() {
               onRemove={removeFromQueue}
               onReorder={reorderQueue}
               onClear={clearQueue}
+              onContextMenu={handleContextMenu}
             />
           )}
           {screen === 'library' && (
@@ -2300,6 +2408,7 @@ export default function App() {
               }}
               onCreatePlaylist={createPlaylist}
               onAddToQueue={addToQueue}
+              onContextMenu={handleContextMenu}
             />
           )}
           {screen === 'playlist' && activePlaylist && (
@@ -2315,9 +2424,51 @@ export default function App() {
               onUpdateCover={updatePlaylistCover}
               onAddToQueue={addToQueue}
               onBack={() => setScreen('library')}
+              onContextMenu={handleContextMenu}
             />
           )}
         </AnimatePresence>
+
+        <div className={screen === 'player' ? 'contents' : 'fixed -top-[9999px] -left-[9999px] w-[1px] h-[1px] overflow-hidden opacity-0 pointer-events-none'}>
+          <PlayerScreen 
+            key="player" 
+            track={currentTrack} 
+            isPlaying={isPlaying}
+            setIsPlaying={setIsPlaying}
+            isShuffle={isShuffle}
+            setIsShuffle={setIsShuffle}
+            isRepeat={isRepeat}
+            setIsRepeat={setIsRepeat}
+            playbackRate={playbackRate}
+            setPlaybackRate={setPlaybackRate}
+            isLiked={likedTracks.some(t => t.id === currentTrack.id)}
+            onLike={() => toggleLike(currentTrack)}
+            onAddToPlaylist={() => setTrackToAddToPlaylist(currentTrack)}
+            onAddToQueue={() => addToQueue(currentTrack)}
+            onNext={handleNext}
+            onPrev={handlePrev}
+            currentTime={currentTime}
+            duration={duration}
+            isBuffering={isBuffering}
+            setDuration={setDuration}
+            onSeek={(time) => { 
+              if (currentTrack.source === 'youtube') {
+                setCurrentTime(time);
+              } else {
+                audio.currentTime = time; 
+              }
+            }}
+            volume={volume}
+            setVolume={setVolume}
+            onOpenEqualizer={() => setIsEqualizerOpen(true)}
+            onOpenQueue={() => navigateTo('queue')}
+            onBack={() => setScreen(prevScreen)}
+            queue={queue}
+            currentContext={currentContext}
+            trendingTracks={trendingTracks}
+            isVisible={screen === 'player'}
+          />
+        </div>
 
         <Equalizer 
           isOpen={isEqualizerOpen}
@@ -2338,6 +2489,67 @@ export default function App() {
           addToPlaylist(newP.id, track);
         }}
       />
+
+      <AnimatePresence>
+        {contextMenu && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.95 }}
+            animate={{ opacity: 1, scale: 1 }}
+            exit={{ opacity: 0, scale: 0.95 }}
+            transition={{ duration: 0.1 }}
+            className="fixed z-[9999] bg-[#1a1a1a] border border-white/10 rounded-2xl shadow-2xl overflow-hidden min-w-[200px] py-2"
+            style={{ 
+              top: Math.min(contextMenu.y, window.innerHeight - 250), 
+              left: Math.min(contextMenu.x, window.innerWidth - 200) 
+            }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <button 
+              className="w-full text-left px-4 py-3 text-sm font-bold text-white hover:bg-white/10 transition-colors flex items-center gap-3"
+              onClick={() => { handlePlay(contextMenu.track); closeContextMenu(); }}
+            >
+              <Play size={16} /> Play
+            </button>
+            <button 
+              className="w-full text-left px-4 py-3 text-sm font-bold text-white hover:bg-white/10 transition-colors flex items-center gap-3"
+              onClick={() => { addToQueue(contextMenu.track); closeContextMenu(); }}
+            >
+              <ListMusic size={16} /> Add to queue
+            </button>
+            <button 
+              className="w-full text-left px-4 py-3 text-sm font-bold text-white hover:bg-white/10 transition-colors flex items-center gap-3"
+              onClick={() => {
+                setQueue(prev => [contextMenu.track, ...prev]);
+                showToast('Added to play next');
+                closeContextMenu();
+              }}
+            >
+              <SkipForward size={16} /> Play next
+            </button>
+            <button 
+              className="w-full text-left px-4 py-3 text-sm font-bold text-white hover:bg-white/10 transition-colors flex items-center gap-3"
+              onClick={() => { setTrackToAddToPlaylist(contextMenu.track); closeContextMenu(); }}
+            >
+              <Plus size={16} /> Add to playlist
+            </button>
+            <button 
+              className="w-full text-left px-4 py-3 text-sm font-bold text-white hover:bg-white/10 transition-colors flex items-center gap-3"
+              onClick={() => { toggleLike(contextMenu.track); closeContextMenu(); }}
+            >
+              <Heart size={16} fill={likedTracks.some(t => t.id === contextMenu.track.id) ? "currentColor" : "none"} className={likedTracks.some(t => t.id === contextMenu.track.id) ? "text-primary" : ""} /> 
+              {likedTracks.some(t => t.id === contextMenu.track.id) ? 'Remove from favorites' : 'Add to favorites'}
+            </button>
+            {contextMenu.context?.type === 'favorites' && (
+              <button 
+                className="w-full text-left px-4 py-3 text-sm font-bold text-red-500 hover:bg-white/10 transition-colors flex items-center gap-3"
+                onClick={() => { toggleLike(contextMenu.track); closeContextMenu(); }}
+              >
+                <Trash2 size={16} /> Remove
+              </button>
+            )}
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       <AnimatePresence>
         {screen !== 'player' && currentTrack && (
