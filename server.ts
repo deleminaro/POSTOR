@@ -126,9 +126,13 @@ async function startServer() {
         
         if (lrclibRes.ok) {
           const lrclibData = await lrclibRes.json();
+          if (lrclibData.syncedLyrics) {
+            console.log('[Lyrics] Found synced lyrics on LRCLIB (get)');
+            return res.json({ lyrics: lrclibData.syncedLyrics, synced: true });
+          }
           if (lrclibData.plainLyrics) {
-            console.log('[Lyrics] Found on LRCLIB (get)');
-            return res.json({ lyrics: lrclibData.plainLyrics });
+            console.log('[Lyrics] Found plain lyrics on LRCLIB (get)');
+            return res.json({ lyrics: lrclibData.plainLyrics, synced: false });
           }
         } else {
           // Fallback to LRCLIB search
@@ -140,10 +144,15 @@ async function startServer() {
           if (searchRes.ok) {
             const searchData = await searchRes.json();
             if (Array.isArray(searchData) && searchData.length > 0) {
+              const trackWithSyncedLyrics = searchData.find(t => t.syncedLyrics);
+              if (trackWithSyncedLyrics) {
+                console.log('[Lyrics] Found synced lyrics on LRCLIB (search)');
+                return res.json({ lyrics: trackWithSyncedLyrics.syncedLyrics, synced: true });
+              }
               const trackWithLyrics = searchData.find(t => t.plainLyrics);
               if (trackWithLyrics) {
-                console.log('[Lyrics] Found on LRCLIB (search)');
-                return res.json({ lyrics: trackWithLyrics.plainLyrics });
+                console.log('[Lyrics] Found plain lyrics on LRCLIB (search)');
+                return res.json({ lyrics: trackWithLyrics.plainLyrics, synced: false });
               }
             }
           }

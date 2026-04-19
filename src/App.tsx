@@ -38,7 +38,8 @@ import {
   ListPlus,
   X,
   Gauge,
-  ListMusic
+  ListMusic,
+  Share2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import ReactPlayer from 'react-player';
@@ -46,7 +47,7 @@ import Hls from 'hls.js';
 import { Screen, Track, Playlist, RECENTLY_PLAYED, PLAYLISTS, ARTISTS } from './types';
 import * as soundcloud from './services/soundcloud';
 import * as youtube from './services/youtube';
-import { getLyrics } from './services/lyrics';
+import { getLyrics, LyricsData } from './services/lyrics';
 import { Equalizer } from './components/Equalizer';
 
 // --- Components ---
@@ -600,14 +601,53 @@ const PlayerScreen: React.FC<{
   isVisible: boolean;
 }> = ({ track, isPlaying, setIsPlaying, isShuffle, setIsShuffle, isRepeat, setIsRepeat, isLiked, onLike, onAddToPlaylist, onAddToQueue, onNext, onPrev, currentTime, duration, isBuffering, onSeek, setDuration, volume, setVolume, onOpenEqualizer, onOpenQueue, onBack, queue, currentContext, trendingTracks, playbackRate, setPlaybackRate, isVisible }) => {
   const playerRef = useRef<any>(null);
+
+  const handleManualSeek = (time: number) => {
+    if (track.source === 'youtube' && playerRef.current) {
+      playerRef.current.seekTo(time, 'seconds');
+    }
+    onSeek(time);
+  };
   const [isSeeking, setIsSeeking] = useState(false);
   const [isPlayerReady, setIsPlayerReady] = useState(false);
   const [showLyrics, setShowLyrics] = useState(false);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [isSpeedMenuOpen, setIsSpeedMenuOpen] = useState(false);
-  const [lyrics, setLyrics] = useState<string | null>(null);
+  const [showShareToast, setShowShareToast] = useState(false);
+
+  const handleShare = async () => {
+    const shareUrl = window.location.origin.includes('localhost') || window.location.origin.includes('asia-east1.run.app') 
+      ? 'https://postor.onrender.com' 
+      : window.location.href;
+
+    const shareData = {
+      title: 'Check out this track on Vivid Dreams Music!',
+      text: `Listening to ${track.title} by ${track.artist}`,
+      url: shareUrl,
+    };
+
+    try {
+      if (typeof navigator !== 'undefined' && navigator.share) {
+        await navigator.share(shareData);
+      } else {
+        await navigator.clipboard.writeText(shareUrl);
+        setShowShareToast(true);
+        setTimeout(() => setShowShareToast(false), 2000);
+      }
+    } catch (err) {
+      console.error('Error sharing:', err);
+    }
+  };
+  const [isFollowLyrics, setIsFollowLyrics] = useState(true);
+  const [lyrics, setLyrics] = useState<LyricsData | null>(null);
   const [isLyricsLoading, setIsLyricsLoading] = useState(false);
   const lyricsContainerRef = useRef<HTMLDivElement>(null);
+  const lastUserScrollRef = useRef<number>(0);
+
+  const handleLyricsScroll = () => {
+    lastUserScrollRef.current = Date.now();
+  };
+
   const Player = ReactPlayer as any;
 
   const nextTrack = useMemo(() => {
@@ -620,21 +660,63 @@ const PlayerScreen: React.FC<{
     return tracks[nextIndex];
   }, [queue, currentContext, trendingTracks, track.id]);
 
-  const lyricsLines = useMemo(() => lyrics ? lyrics.split('\n').filter(l => l.trim().length > 0) : [], [lyrics]);
+  const parsedLyrics = useMemo(() => {
+    if (!lyrics || !lyrics.synced) return [];
+    const lines = lyrics.lyrics.split('\n');
+    const result: { time: number; text: string }[] = [];
+    const timeRegex = /\[(\d+):(\d+(\.\d+)?)\]/;
+    
+    lines.forEach(line => {
+      const match = timeRegex.exec(line);
+      if (match) {
+        const minutes = parseInt(match[1]);
+        const seconds = parseFloat(match[2]);
+        const time = minutes * 60 + seconds;
+        const text = line.replace(timeRegex, '').trim();
+        if (text) {
+          result.push({ time, text });
+        }
+      }
+    });
+    return result;
+  }, [lyrics]);
+
+  const lyricsLines = useMemo(() => {
+    if (!lyrics) return [];
+    if (lyrics.synced) return parsedLyrics.map(l => l.text);
+    return lyrics.lyrics.split('\n').filter(l => l.trim().length > 0);
+  }, [lyrics, parsedLyrics]);
+
   const activeLineIdx = useMemo(() => {
     if (!lyricsLines.length || duration <= 0) return -1;
-    // Simple linear estimation for lyrics timing
+    
+    if (lyrics?.synced && parsedLyrics.length > 0) {
+      let idx = -1;
+      for (let i = 0; i < parsedLyrics.length; i++) {
+        if (currentTime >= parsedLyrics[i].time) {
+          idx = i;
+        } else {
+          break;
+        }
+      }
+      return idx;
+    }
+
+    // Simple linear estimation for non-synced lyrics
     return Math.floor((currentTime / duration) * lyricsLines.length);
-  }, [currentTime, duration, lyricsLines]);
+  }, [currentTime, duration, lyricsLines, lyrics, parsedLyrics]);
 
   useEffect(() => {
-    if (showLyrics && activeLineIdx !== -1 && lyricsContainerRef.current) {
-      const activeElement = lyricsContainerRef.current.querySelector(`[data-line-idx="${activeLineIdx}"]`) as HTMLElement;
-      if (activeElement) {
-        activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    if (showLyrics && activeLineIdx !== -1 && lyricsContainerRef.current && isFollowLyrics) {
+      // Only auto-scroll if user hasn't scrolled manually in the last 3 seconds
+      if (Date.now() - lastUserScrollRef.current > 3000) {
+        const activeElement = lyricsContainerRef.current.querySelector(`[data-line-idx="${activeLineIdx}"]`) as HTMLElement;
+        if (activeElement) {
+          activeElement.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }
       }
     }
-  }, [activeLineIdx, showLyrics]);
+  }, [activeLineIdx, showLyrics, isFollowLyrics]);
 
   const isLoading = track.source === 'youtube' ? !isPlayerReady : isBuffering;
 
@@ -708,6 +790,7 @@ const PlayerScreen: React.FC<{
                   playbackRate={playbackRate}
                   loop={isRepeat}
                   volume={volume}
+                  progressInterval={100}
                   playsinline
                   controls={false}
                   wrapper={PlayerWrapper}
@@ -787,7 +870,29 @@ const PlayerScreen: React.FC<{
             >
               <Heart size={24} fill={isLiked ? 'currentColor' : 'none'} />
             </button>
+            <button 
+              onClick={handleShare}
+              className="p-3 rounded-2xl bg-white/5 text-on-surface hover:bg-white/10 transition-all flex items-center justify-center"
+              title="Share track"
+            >
+              <Share2 size={24} />
+            </button>
           </div>
+
+          <AnimatePresence>
+            {showShareToast && (
+              <motion.div
+                initial={{ opacity: 0, scale: 0.9, y: 10 }}
+                animate={{ opacity: 1, scale: 1, y: 0 }}
+                exit={{ opacity: 0, scale: 0.9, y: 10 }}
+                className="absolute inset-0 z-50 flex items-center justify-center pointer-events-none"
+              >
+                <div className="bg-primary px-4 py-2 rounded-xl text-on-primary font-black uppercase tracking-widest text-[10px] shadow-2xl">
+                  Link copied to clipboard!
+                </div>
+              </motion.div>
+            )}
+          </AnimatePresence>
 
           {/* Progress Bar */}
           <div className="space-y-3">
@@ -797,7 +902,7 @@ const PlayerScreen: React.FC<{
                 const rect = e.currentTarget.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const pct = x / rect.width;
-                onSeek(pct * duration);
+                handleManualSeek(pct * duration);
               }}
             >
               <motion.div 
@@ -940,12 +1045,21 @@ const PlayerScreen: React.FC<{
             transition={{ type: 'spring', damping: 30, stiffness: 300 }}
             className="fixed inset-0 z-50 bg-background/95 backdrop-blur-3xl p-8 md:p-16 overflow-y-auto custom-scrollbar"
             ref={lyricsContainerRef}
+            onScroll={handleLyricsScroll}
           >
             <div className="max-w-2xl mx-auto">
               <div className="flex justify-between items-center mb-12 sticky top-0 bg-background/60 backdrop-blur-xl z-10 py-4 rounded-2xl px-6 border border-white/5">
-                <div>
-                  <h3 className="text-xl font-black uppercase tracking-tighter text-on-surface">{track.title}</h3>
-                  <p className="text-xs font-bold text-primary uppercase tracking-widest">{track.artist}</p>
+                <div className="flex items-center gap-4">
+                  <div>
+                    <h3 className="text-xl font-black uppercase tracking-tighter text-on-surface">{track.title}</h3>
+                    <p className="text-xs font-bold text-primary uppercase tracking-widest">{track.artist}</p>
+                  </div>
+                  <button 
+                    onClick={() => setIsFollowLyrics(!isFollowLyrics)}
+                    className={`ml-4 px-3 py-1.5 rounded-full text-[10px] font-black uppercase tracking-widest transition-all ${isFollowLyrics ? 'bg-primary text-on-primary' : 'bg-white/5 text-on-surface/40'}`}
+                  >
+                    {isFollowLyrics ? 'Following' : 'Manual'}
+                  </button>
                 </div>
                 <button 
                   onClick={() => setShowLyrics(false)} 
@@ -974,17 +1088,24 @@ const PlayerScreen: React.FC<{
                         data-line-idx={idx}
                         animate={{ 
                           opacity: isActive ? 1 : 0.2,
-                          scale: isActive ? 1.02 : 1,
-                          x: isActive ? 10 : 0
+                          scale: isActive ? 1.05 : 1,
+                          x: isActive ? 15 : 0,
+                          color: isActive ? 'var(--color-primary)' : 'var(--color-on-surface)'
                         }}
-                        className={`text-3xl md:text-5xl font-black leading-tight uppercase tracking-tighter transition-all duration-500 ${isActive ? 'text-on-surface' : 'text-on-surface/40'}`}
+                        transition={{ type: 'spring', damping: 20, stiffness: 200 }}
+                        className={`text-3xl md:text-5xl font-black leading-tight uppercase tracking-tighter transition-all duration-500 cursor-pointer hover:opacity-100 py-2 px-4 rounded-2xl ${isActive ? 'bg-white/5 text-primary' : 'text-on-surface/40'}`}
+                        onClick={() => {
+                          if (lyrics?.synced && parsedLyrics[idx]) {
+                            handleManualSeek(parsedLyrics[idx].time);
+                          }
+                        }}
                       >
                         {line}
                       </motion.p>
                     );
                   }) : (
                     <div className="text-center py-32 opacity-40 uppercase font-black tracking-tighter text-3xl md:text-4xl">
-                      {lyrics === "Lyrics not found." ? "Lyrics not found for this track." : "Searching for lyrics..."}
+                      {lyrics?.lyrics === "Lyrics not found." ? "Lyrics not found for this track." : "Searching for lyrics..."}
                     </div>
                   )}
                 </div>

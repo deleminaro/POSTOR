@@ -19,15 +19,28 @@ function cleanTitle(title: string): string {
     .trim();
 }
 
-export async function getLyrics(title: string, artist: string): Promise<string> {
+export interface LyricsData {
+  lyrics: string;
+  synced: boolean;
+}
+
+export async function getLyrics(title: string, artist: string): Promise<LyricsData> {
   const cleanedTitle = cleanTitle(title);
   const cacheKey = `${CACHE_PREFIX}${cleanedTitle}_${artist}`.toLowerCase().replace(/\s+/g, '_');
   
   // Check cache
   const cached = localStorage.getItem(cacheKey);
   if (cached) {
-    console.log('[Lyrics] Cache hit for:', cleanedTitle);
-    return cached;
+    try {
+      const parsed = JSON.parse(cached);
+      if (parsed && typeof parsed === 'object' && 'lyrics' in parsed) {
+        console.log('[Lyrics] Cache hit for:', cleanedTitle);
+        return parsed;
+      }
+    } catch (e) {
+      // If not JSON, it's old cache, just return as plain
+      return { lyrics: cached, synced: false };
+    }
   }
 
   try {
@@ -38,18 +51,22 @@ export async function getLyrics(title: string, artist: string): Promise<string> 
     }
     const data = await response.json();
     const lyrics = data.lyrics || "Lyrics not found.";
+    const synced = !!data.synced;
+    
+    const result = { lyrics, synced };
     
     // Cache the result
     if (lyrics && lyrics !== "Lyrics not found.") {
-      localStorage.setItem(cacheKey, lyrics);
+      localStorage.setItem(cacheKey, JSON.stringify(result));
     }
     
-    return lyrics;
+    return result;
   } catch (error: any) {
     console.error("Error fetching lyrics:", error);
+    let message = "Lyrics unavailable for this track.";
     if (error.message && (error.message.includes('API key') || error.message.includes('unavailable'))) {
-      return error.message;
+      message = error.message;
     }
-    return "Lyrics unavailable for this track.";
+    return { lyrics: message, synced: false };
   }
 }
